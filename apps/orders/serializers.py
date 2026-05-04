@@ -529,15 +529,9 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                 order_pk = instance.pk
 
                 def enqueue_client_activation() -> None:
-                    try:
-                        from apps.orders.tasks import notify_client_activation_after_approval_task
+                    from apps.orders.tasks import schedule_notify_client_activation_after_approval
 
-                        notify_client_activation_after_approval_task.delay(order_pk)
-                    except Exception:
-                        logger.exception(
-                            "No se pudo encolar el correo de activación de cuenta (pedido %s).",
-                            order_pk,
-                        )
+                    schedule_notify_client_activation_after_approval(order_pk)
 
                 transaction.on_commit(enqueue_client_activation)
                 try:

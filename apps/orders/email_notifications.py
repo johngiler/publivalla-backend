@@ -18,7 +18,42 @@ def _order_public_url(order: Order) -> str:
     return f"{base}/cuenta/pedidos"
 
 
-def _collect_recipient_emails(order: Order) -> list[str]:
+def _emails_client_company(order: Order) -> list[str]:
+    """Correo de ficha empresa (Mi empresa)."""
+    a = (order.client.email or "").strip()
+    return [a] if a else []
+
+
+def _emails_marketplace_admins(
+    order: Order, *, exclude_user_id: int | None = None
+) -> list[str]:
+    """Correos de usuarios con rol administrador marketplace (Mi perfil)."""
+    ws = order.client.workspace
+    if ws is None:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(addr: str | None) -> None:
+        x = (addr or "").strip()
+        if not x or x in seen:
+            return
+        seen.add(x)
+        out.append(x)
+
+    qs = UserProfile.objects.filter(
+        workspace_id=ws.pk,
+        role=UserProfile.Role.ADMIN,
+    ).select_related("user")
+    for prof in qs:
+        if exclude_user_id is not None and prof.user_id == exclude_user_id:
+            continue
+        add(getattr(prof.user, "email", None))
+    return out
+
+
+def _emails_client_and_admins(order: Order) -> list[str]:
+    """Cliente + todos los admins (p. ej. proceso automático sin actor)."""
     ws = order.client.workspace
     if ws is None:
         return []
@@ -40,6 +75,35 @@ def _collect_recipient_emails(order: Order) -> list[str]:
     for prof in qs:
         add(getattr(prof.user, "email", None))
     return out
+
+
+def _status_change_recipient_emails(order: Order, actor_id: int | None) -> list[str]:
+    """
+    Quién recibe el aviso de cambio de estado:
+    - Admin marketplace del workspace → solo la empresa cliente (Mi empresa).
+    - Cliente marketplace de ese pedido → solo administradores (Mi perfil), sin el propio actor.
+    - Sin actor (sistema, invitado sin usuario) → cliente y admins (comportamiento amplio).
+    - Actor no clasificable (p. ej. staff de plataforma) → cliente y admins.
+    """
+    if actor_id is None:
+        return _emails_client_and_admins(order)
+
+    try:
+        profile = UserProfile.objects.only(
+            "role", "workspace_id", "client_id"
+        ).get(user_id=actor_id)
+    except UserProfile.DoesNotExist:
+        return _emails_client_and_admins(order)
+
+    ws_id = order.client.workspace_id
+    if profile.role == UserProfile.Role.ADMIN and profile.workspace_id == ws_id:
+        return _emails_client_company(order)
+    if (
+        profile.role == UserProfile.Role.CLIENT
+        and profile.client_id == order.client_id
+    ):
+        return _emails_marketplace_admins(order, exclude_user_id=actor_id)
+    return _emails_client_and_admins(order)
 
 
 def _workspace_smtp_connection(ws):
@@ -105,10 +169,20 @@ def send_workspace_transactional_email(
         return False
 
 
-def try_send_order_status_emails(order: Order, from_status: str, to_status: str) -> None:
+def try_send_order_status_emails(
+    order: Order,
+    from_status: str,
+    to_status: str,
+    *,
+    actor_id: int | None = None,
+) -> None:
     """
-    Envía un correo a cliente y administradores del marketplace cuando cambia el estado.
-    Solo actúa si el workspace tiene SMTP transaccional configurado (host + remitente).
+    Envía un correo cuando cambia el estado del pedido (SMTP del workspace).
+
+    Destinatarios según quién originó el cambio (``actor_id`` en el evento de historial):
+    administrador marketplace → solo correo de la empresa cliente (Mi empresa); cliente
+    marketplace del pedido → solo correos de administradores (Mi perfil); sin actor o actor
+    no reconocido → empresa y administradores.
     """
     if from_status == to_status:
         return
@@ -120,7 +194,7 @@ def try_send_order_status_emails(order: Order, from_status: str, to_status: str)
     if not host or not from_addr:
         return
 
-    recipients = _collect_recipient_emails(order)
+    recipients = _status_change_recipient_emails(order, actor_id)
     if not recipients:
         logger.info(
             "Pedido %s → %s: no hay destinatarios con correo (cliente o admins).",

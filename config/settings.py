@@ -182,8 +182,10 @@ try:
 except ImportError:
     pass
 
-# Celery — correos de pedidos / activación tras `transaction.on_commit`; prueba SMTP en Mi negocio vía worker si no es eager.
-# Sin `CELERY_BROKER_URL`, `CELERY_TASK_ALWAYS_EAGER=True`: las tareas corren en el mismo proceso tras el commit (sigue sin bloquear el commit, pero sí el cierre de la petición si el SMTP es lento).
+# Celery — correos de pedidos / activación tras `transaction.on_commit`; prueba SMTP en Mi negocio vía worker.
+# Sin `CELERY_BROKER_URL`, `CELERY_TASK_ALWAYS_EAGER=True` en Celery, pero el dominio de pedidos **no** usa ese
+# camino para correo: `apps/orders/tasks.py` envía en un hilo daemon (PATCH no espera al SMTP). Con broker real,
+# las tareas van a la cola y las ejecuta el worker.
 CELERY_BROKER_URL = (os.environ.get("CELERY_BROKER_URL") or "").strip()
 CELERY_RESULT_BACKEND = (
     (os.environ.get("CELERY_RESULT_BACKEND") or "").strip() or CELERY_BROKER_URL or "rpc://"

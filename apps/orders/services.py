@@ -59,18 +59,12 @@ def log_order_status_transition(
     )
     order_id = order.pk
     from_s = from_status or ""
+    actor_id = getattr(actor, "pk", None) if actor is not None else None
 
     def enqueue_status_emails() -> None:
-        try:
-            from apps.orders.tasks import send_order_status_emails_task
+        from apps.orders.tasks import schedule_send_order_status_emails
 
-            send_order_status_emails_task.delay(order_id, from_s, to_status)
-        except Exception:
-            logger.exception(
-                "No se pudo encolar la notificación por correo (pedido %s → %s).",
-                order_id,
-                to_status,
-            )
+        schedule_send_order_status_emails(order_id, from_s, to_status, actor_id=actor_id)
 
     transaction.on_commit(enqueue_status_emails)
     return ev
