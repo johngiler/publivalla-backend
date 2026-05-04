@@ -26,8 +26,18 @@ except ImportError:  # pragma: no cover
 
 IVA_RATE = Decimal("0.16")
 
+_MODULE_DIR = Path(__file__).resolve().parent
+_BUNDLED_LOGO_SVG = _MODULE_DIR / "pdf_branding" / "logotype.svg"
 _REPO_ROOT = Path(settings.BASE_DIR).resolve().parent
-_LOGO_SVG = _REPO_ROOT / "images" / "logos" / "logotype.svg"
+_REPO_LOGO_SVG = _REPO_ROOT / "images" / "logos" / "logotype.svg"
+
+
+def _logo_svg_path() -> Path | None:
+    """Logo empaquetado con el backend (producción) o copia en la raíz del repo (desarrollo)."""
+    for candidate in (_BUNDLED_LOGO_SVG, _REPO_LOGO_SVG):
+        if candidate.is_file():
+            return candidate
+    return None
 
 # Márgenes 2cm + 2cm en SimpleDocTemplate de estos PDFs
 _INNER_W = A4[0] - 4 * cm
@@ -75,10 +85,11 @@ def _p_cell(text: str, style: ParagraphStyle, *, bold: bool = False) -> Paragrap
 
 
 def _logo_draw(canvas, doc):
-    if svg2rlg is None or renderPDF is None or not _LOGO_SVG.is_file():
+    logo_path = _logo_svg_path()
+    if svg2rlg is None or renderPDF is None or logo_path is None:
         return
     try:
-        drawing = svg2rlg(str(_LOGO_SVG))
+        drawing = svg2rlg(str(logo_path))
         if drawing is None:
             return
         w, h = drawing.width, drawing.height

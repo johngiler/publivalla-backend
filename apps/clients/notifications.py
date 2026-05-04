@@ -5,9 +5,9 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.core import signing
-from django.core.mail import send_mail
 
 from apps.clients.models import Client
+from apps.orders.email_notifications import send_workspace_transactional_email
 from apps.orders.models import Order
 from apps.users.models import UserProfile
 
@@ -38,7 +38,8 @@ def notify_client_after_order_client_approved(order: Order) -> None:
     """
     Cuando el admin pasa la orden a «Solicitud aprobada» (estado client_approved):
     - Si la empresa ya tiene usuario marketplace: solo log (el CRM puede notificar aparte).
-    - Si no: envía correo con enlace para crear contraseña (mismo email de la ficha).
+    - Si no: envía correo con enlace para crear contraseña (mismo email de la ficha),
+      usando la cuenta SMTP configurada en el workspace (Mi negocio), no DEFAULT_FROM_EMAIL.
     """
     client = order.client
     if client_has_marketplace_user(client):
@@ -63,17 +64,25 @@ def notify_client_after_order_client_approved(order: Order) -> None:
         + "El enlace caduca en 14 días. Si ya creaste cuenta al comprar, inicia sesión con tu correo.\n"
     )
 
-    try:
-        send_mail(
-            subject,
-            body,
-            getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"),
-            [client.email],
-            fail_silently=False,
+    to_addr = (client.email or "").strip()
+    if not to_addr:
+        logger.warning(
+            "No se envía correo de activación: cliente %s sin correo en ficha. Enlace: %s",
+            client.pk,
+            link,
         )
-    except Exception:
-        logger.exception(
-            "No se pudo enviar correo de activación para cliente %s (orden %s). Enlace: %s",
+        return
+
+    ws = getattr(client, "workspace", None)
+    if not send_workspace_transactional_email(
+        ws,
+        to_emails=[to_addr],
+        subject=subject,
+        body=body,
+    ):
+        logger.warning(
+            "No se envió correo de activación para cliente %s (orden %s). "
+            "Configura SMTP y remitente en Mi negocio o revisa el registro de errores. Enlace: %s",
             client.pk,
             order.pk,
             link,

@@ -90,6 +90,11 @@ class MyWorkspaceView(APIView):
         ser.is_valid(raise_exception=True)
         ser.save()
 
+        if "transactional_email_password" in request.data:
+            raw = request.data.get("transactional_email_password")
+            ws.transactional_email_password = (str(raw).strip() if raw is not None else "")
+            ws.save(update_fields=["transactional_email_password"])
+
         if "logo" in request.FILES:
             ws.logo = request.FILES["logo"]
         if _truthy_form_value(request.data.get("remove_logo")):

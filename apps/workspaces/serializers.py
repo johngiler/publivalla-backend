@@ -58,12 +58,24 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
     No se expone en /api/workspace/current/ (anónimo).
     """
 
+    transactional_email_password_set = serializers.SerializerMethodField()
+
     class Meta(WorkspacePublicSerializer.Meta):
         fields = WorkspacePublicSerializer.Meta.fields + (
             "can_create_shopping_centers",
             "can_create_ad_spaces",
             "can_create_marketplace_admin_users",
+            "transactional_email_host",
+            "transactional_email_port",
+            "transactional_email_use_tls",
+            "transactional_email_username",
+            "transactional_email_password_set",
+            "transactional_email_from_address",
+            "transactional_email_from_name",
         )
+
+    def get_transactional_email_password_set(self, obj):
+        return bool((getattr(obj, "transactional_email_password", None) or "").strip())
 
 
 class WorkspaceMeUpdateSerializer(serializers.ModelSerializer):
@@ -82,4 +94,10 @@ class WorkspaceMeUpdateSerializer(serializers.ModelSerializer):
             "city",
             "marketplace_title",
             "marketplace_tagline",
+            "transactional_email_host",
+            "transactional_email_port",
+            "transactional_email_use_tls",
+            "transactional_email_username",
+            "transactional_email_from_address",
+            "transactional_email_from_name",
         )

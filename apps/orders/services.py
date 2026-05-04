@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal
 from django.contrib.auth.models import AbstractBaseUser
@@ -21,6 +22,8 @@ from apps.orders.validators import (
 AUTO_EXPIRE_NOTE = (
     "Vencimiento automático: la última línea del contrato ya superó su fecha de fin."
 )
+
+logger = logging.getLogger(__name__)
 
 
 def default_invoice_number_for_order(order: Order) -> str:
@@ -46,7 +49,7 @@ def log_order_status_transition(
     created_at=None,
 ) -> OrderStatusEvent:
     """Registra un paso en la línea de tiempo de la orden."""
-    return OrderStatusEvent.objects.create(
+    ev = OrderStatusEvent.objects.create(
         order=order,
         from_status=from_status or "",
         to_status=to_status,
@@ -54,6 +57,17 @@ def log_order_status_transition(
         note=note or "",
         created_at=created_at if created_at is not None else timezone.now(),
     )
+    try:
+        from apps.orders.email_notifications import try_send_order_status_emails
+
+        try_send_order_status_emails(order, from_status or "", to_status)
+    except Exception:
+        logger.exception(
+            "Notificación por correo omitida (pedido %s → %s).",
+            order.pk,
+            to_status,
+        )
+    return ev
 
 
 def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -> Order:

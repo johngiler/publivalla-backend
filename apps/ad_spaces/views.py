@@ -185,3 +185,41 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                 {"city": _EMPTY_CITY_SENTINEL, "label": "Sin ciudad", "count": empty_city}
             )
         return Response({"total": total, "items": items})
+
+    @action(detail=False, methods=["get"], url_path="center-facets")
+    def center_facets(self, request):
+        """
+        Conteos por centro comercial (slug + nombre) para pills en portada.
+        Respeta tenant, búsqueda de listado y filtro opcional por ciudad.
+        """
+        qs = AdSpace.objects.select_related("shopping_center").filter(
+            shopping_center__marketplace_catalog_enabled=True,
+            shopping_center__is_active=True,
+            is_active=True,
+        )
+        ws = get_workspace_for_request(request)
+        if ws is not None:
+            qs = qs.filter(shopping_center__workspace=ws)
+        search = request.query_params.get("search", "").strip()
+        qs = self._apply_list_search(qs, search)
+        city = request.query_params.get("city", "").strip()
+        if city == _EMPTY_CITY_SENTINEL:
+            qs = qs.filter(shopping_center__city="")
+        elif city:
+            qs = qs.filter(shopping_center__city__iexact=city)
+        total = qs.count()
+        rows = (
+            qs.values("shopping_center__slug", "shopping_center__name")
+            .annotate(count=Count("id"))
+            .order_by("-count", "shopping_center__name", "shopping_center__slug")
+        )
+        items = [
+            {
+                "slug": (r["shopping_center__slug"] or "").strip(),
+                "name": (r["shopping_center__name"] or "").strip() or r["shopping_center__slug"],
+                "count": r["count"],
+            }
+            for r in rows
+            if (r.get("shopping_center__slug") or "").strip()
+        ]
+        return Response({"total": total, "items": items})

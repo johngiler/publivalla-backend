@@ -136,6 +136,43 @@ class Workspace(TimeStampedActiveModel):
         default=True,
         help_text="Si está desactivado, no se pueden crear ni promover usuarios con rol administrador del panel.",
     )
+    # Correo transaccional (notificaciones de pedidos): remitente SMTP del owner, distinto del correo personal.
+    transactional_email_host = models.CharField(
+        "Servidor SMTP (envío de notificaciones)",
+        max_length=255,
+        blank=True,
+        help_text="Ej. smtp.gmail.com. Si está vacío, no se envían correos automáticos de pedidos con esta cuenta.",
+    )
+    transactional_email_port = models.PositiveIntegerField(
+        "Puerto SMTP",
+        default=587,
+    )
+    transactional_email_use_tls = models.BooleanField(
+        "Usar TLS al conectar al SMTP",
+        default=True,
+    )
+    transactional_email_username = models.CharField(
+        "Usuario SMTP",
+        max_length=255,
+        blank=True,
+    )
+    transactional_email_password = models.CharField(
+        "Contraseña SMTP",
+        max_length=512,
+        blank=True,
+        help_text="Se guarda en base de datos; restringe acceso al servidor y usa contraseña de aplicación si aplica.",
+    )
+    transactional_email_from_address = models.EmailField(
+        "Dirección remitente (From)",
+        blank=True,
+        help_text="Correo que verán admin y cliente en notificaciones de pedidos.",
+    )
+    transactional_email_from_name = models.CharField(
+        "Nombre remitente (opcional)",
+        max_length=120,
+        blank=True,
+        help_text="Ej. nombre del marketplace; si está vacío se usa el nombre comercial del workspace.",
+    )
 
     class Meta:
         ordering = ["slug"]
