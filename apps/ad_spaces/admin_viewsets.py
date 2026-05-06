@@ -1,9 +1,14 @@
+import re
+
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from apps.ad_spaces.admin_serializers import AdSpaceAdminSerializer
 from apps.ad_spaces.gallery import apply_ad_space_gallery_from_request
 from apps.ad_spaces.models import AdSpace
+from apps.malls.models import ShoppingCenter
 from apps.users.base_viewsets import AdminModelViewSet
 from apps.workspaces.tenant import get_workspace_for_request
 
@@ -12,6 +17,7 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
     """CRUD tomas / espacios publicitarios (solo rol admin)."""
 
     serializer_class = AdSpaceAdminSerializer
+    _RE_CODE = re.compile(r"^(?P<prefix>[A-Z0-9]{2,5})-T(?P<num>\d{1,3})(?P<suf>[A-Z]?)$")
 
     def _assert_center_in_tenant(self, center):
         if center is None:
@@ -64,3 +70,56 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
                     | Q(shopping_center__name__icontains=search)
                 )
         return qs.prefetch_related("gallery_images")
+
+    @action(detail=False, methods=["get"], url_path="next-code")
+    def next_code(self, request):
+        """
+        Sugiere el próximo código de toma para un centro (prefijo + T{n}).
+        - Prefijo: se infiere desde códigos existentes del centro; si no hay, desde el slug.
+        - Sugerencia: toma el mayor número encontrado y suma 1.
+        """
+        raw = (request.query_params.get("shopping_center") or "").strip()
+        if not raw.isdigit():
+            raise ValidationError({"shopping_center": "Selecciona un centro comercial válido."})
+        center_id = int(raw)
+        ws = get_workspace_for_request(request)
+        qs_center = ShoppingCenter.objects.all()
+        if ws is not None:
+            qs_center = qs_center.filter(workspace=ws)
+        center = qs_center.filter(id=center_id).first()
+        if center is None:
+            raise ValidationError({"shopping_center": "El centro comercial no existe o no pertenece a este workspace."})
+
+        codes = list(
+            AdSpace.objects.filter(shopping_center_id=center.id).values_list("code", flat=True)
+        )
+        prefix = ""
+        max_n = 0
+        for c in codes:
+            m = self._RE_CODE.match((c or "").strip().upper())
+            if not m:
+                continue
+            if not prefix:
+                prefix = m.group("prefix")
+            try:
+                max_n = max(max_n, int(m.group("num")))
+            except Exception:
+                continue
+
+        if not prefix:
+            slug = (center.slug or "").strip().upper()
+            parts = [p for p in slug.split("-") if p and p != "SAMBIL"]
+            prefix = (parts[0] if parts else slug)[:5] or "SC"
+
+        candidate = f"{prefix}-T{max_n + 1}"
+        return Response(
+            {
+                "shopping_center": center.id,
+                "prefix": prefix,
+                "max_existing_number": max_n,
+                "suggested_code": candidate,
+                "marketplace_catalog_enabled": bool(center.marketplace_catalog_enabled),
+                "center_slug": center.slug,
+                "center_name": center.name,
+            }
+        )
