@@ -8,6 +8,7 @@ Sin IDs internos ni jerga técnica en el cuerpo visible.
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 import urllib.parse
@@ -20,10 +21,15 @@ OrderStatusAudience = Literal["client", "admins", "all"]
 
 _MODULE_DIR = Path(__file__).resolve().parent
 _BUNDLED_LOGO_SVG = _MODULE_DIR / "pdf_branding" / "logotype.svg"
+_BUNDLED_LOGO_EMAIL_PNG = _MODULE_DIR / "pdf_branding" / "logotype_email.png"
 _REPO_ROOT = Path(settings.BASE_DIR).resolve().parent
 _REPO_LOGO_SVG = _REPO_ROOT / "images" / "logos" / "logotype.svg"
+_REPO_LOGO_EMAIL_PNG = _REPO_ROOT / "images" / "logos" / "logotype_email.png"
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$")
+
+# Cache en proceso: el `src` del logo no cambia hasta redeploy / cambio de archivo.
+_cached_logotype_img_src: str | None | bool = False  # False = aún no calculado
 
 
 def _safe(s: str) -> str:
@@ -37,19 +43,44 @@ def _cta_background_hex(ws_primary: str | None) -> str:
     return "#18181b"
 
 
-def _read_sambil_logotype_data_uri() -> str | None:
-    """Mismo activo que los PDFs: SVG empaquetado o copia en el repo."""
-    for candidate in (_BUNDLED_LOGO_SVG, _REPO_LOGO_SVG):
-        if candidate.is_file():
+def _read_sambil_logotype_img_src() -> str | None:
+    """
+    Logo Sambil para correo: PNG en base64 (Gmail/Apple Mail suelen bloquear SVG en data:).
+
+    El PNG es un **archivo versionado** (`logotype_email.png`), generado offline cuando cambia
+    el SVG de marca; en runtime solo se lee y se codifica (una vez por proceso, con caché).
+    """
+    global _cached_logotype_img_src
+    if _cached_logotype_img_src is not False:
+        return _cached_logotype_img_src if isinstance(_cached_logotype_img_src, str) else None
+
+    out: str | None = None
+    for png_path in (_BUNDLED_LOGO_EMAIL_PNG, _REPO_LOGO_EMAIL_PNG):
+        if png_path.is_file():
             try:
-                text = candidate.read_text(encoding="utf-8")
+                raw = png_path.read_bytes()
             except OSError:
                 continue
-            return (
-                "data:image/svg+xml;charset=utf-8,"
-                + urllib.parse.quote(text, safe="")
-            )
-    return None
+            if raw:
+                b64 = base64.standard_b64encode(raw).decode("ascii")
+                out = f"data:image/png;base64,{b64}"
+                break
+
+    if out is None:
+        for svg_path in (_BUNDLED_LOGO_SVG, _REPO_LOGO_SVG):
+            if svg_path.is_file():
+                try:
+                    text = svg_path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                out = (
+                    "data:image/svg+xml;charset=utf-8,"
+                    + urllib.parse.quote(text, safe="")
+                )
+                break
+
+    _cached_logotype_img_src = out
+    return out
 
 
 def _render_transactional_shell(
@@ -63,7 +94,7 @@ def _render_transactional_shell(
     footer_note: str,
     accent_hex: str,
 ) -> str:
-    logo = _read_sambil_logotype_data_uri()
+    logo = _read_sambil_logotype_img_src()
     logo_block = (
         f'<img src="{logo}" width="200" alt="Sambil" '
         'style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;">'
@@ -163,16 +194,10 @@ def build_order_status_transactional_email(
     company = (company_name or "").strip() or "—"
     accent = _cta_background_hex(accent_hex)
 
-    ref_phrase = f"Pedido {code}" if code else "Tu pedido"
-
     if audience == "client":
         subject = f"{mp}: tu pedido pasó a «{new_l}»"
         headline = "Actualización de tu pedido"
-        lead = (
-            f"El estado de {ref_phrase.lower()} cambió. Ahora figura como «{new_l}»."
-            if code
-            else f"El estado de tu pedido cambió. Ahora figura como «{new_l}»."
-        )
+        lead = f"Tu pedido cambió de estado. Ahora figura como «{new_l}»."
         rows: list[tuple[str, str]] = [
             ("Estado anterior", prev_l),
             ("Estado actual", new_l),
