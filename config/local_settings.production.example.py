@@ -86,3 +86,8 @@ if POSTGRES_DB and not _USE_SQLITE:
     # CELERY_TASK_ALWAYS_EAGER=false
     # Servicio systemd aparte: celery -A config worker -l info
     # Con broker activo, la «Probar conexión SMTP» en Mi negocio responde 202 y el resultado llega en segundo plano.
+    #
+    # Redis / Celery (cola obligatoria en producción):
+    # CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+    # CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/0
+    # CELERY_TASK_ALWAYS_EAGER=false

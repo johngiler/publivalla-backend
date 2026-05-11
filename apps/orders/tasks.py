@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
-
 from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections
@@ -54,40 +52,23 @@ def schedule_send_order_status_emails(
     *,
     actor_id: int | None = None,
 ) -> None:
-    """
-    Con `CELERY_BROKER_URL`, encola en el worker. Sin broker, Celery eager bloquearía el PATCH;
-    en ese caso se ejecuta el mismo trabajo en un hilo daemon tras el commit.
-    """
+    """Encola el envío en Celery (requiere broker)."""
     from_s = from_status or ""
-
-    def run_in_thread() -> None:
-        close_old_connections()
-        try:
-            send_order_status_emails_work(
-                order_id, from_s, to_status, actor_id=actor_id
-            )
-        except Exception:
-            logger.exception(
-                "send_order_status_emails: fallo en segundo plano (pedido %s → %s).",
-                order_id,
-                to_status,
-            )
-        finally:
-            close_old_connections()
-
-    if _has_celery_broker():
-        try:
-            send_order_status_emails_task.delay(
-                order_id, from_s, to_status, actor_id=actor_id
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo encolar la notificación por correo (pedido %s → %s).",
-                order_id,
-                to_status,
-            )
-    else:
-        threading.Thread(target=run_in_thread, daemon=True).start()
+    if not _has_celery_broker():
+        logger.warning(
+            "No se envió correo: falta CELERY_BROKER_URL (pedido %s → %s).",
+            order_id,
+            to_status,
+        )
+        return
+    try:
+        send_order_status_emails_task.delay(order_id, from_s, to_status, actor_id=actor_id)
+    except Exception:
+        logger.exception(
+            "No se pudo encolar la notificación por correo (pedido %s → %s).",
+            order_id,
+            to_status,
+        )
 
 
 def notify_client_activation_after_approval_work(order_id: int) -> None:
@@ -108,25 +89,16 @@ def notify_client_activation_after_approval_task(self, order_id: int) -> None:
 
 
 def schedule_notify_client_activation_after_approval(order_id: int) -> None:
-    def run_in_thread() -> None:
-        close_old_connections()
-        try:
-            notify_client_activation_after_approval_work(order_id)
-        except Exception:
-            logger.exception(
-                "notify_client_activation: fallo en segundo plano (pedido %s).",
-                order_id,
-            )
-        finally:
-            close_old_connections()
-
-    if _has_celery_broker():
-        try:
-            notify_client_activation_after_approval_task.delay(order_id)
-        except Exception:
-            logger.exception(
-                "No se pudo encolar el correo de activación de cuenta (pedido %s).",
-                order_id,
-            )
-    else:
-        threading.Thread(target=run_in_thread, daemon=True).start()
+    if not _has_celery_broker():
+        logger.warning(
+            "No se envió correo de activación: falta CELERY_BROKER_URL (pedido %s).",
+            order_id,
+        )
+        return
+    try:
+        notify_client_activation_after_approval_task.delay(order_id)
+    except Exception:
+        logger.exception(
+            "No se pudo encolar el correo de activación de cuenta (pedido %s).",
+            order_id,
+        )

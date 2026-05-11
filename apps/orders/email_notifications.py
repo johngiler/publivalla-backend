@@ -8,6 +8,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage, get_connection
 
 from apps.orders.models import Order, OrderStatus
+from apps.orders.mailgun_sender import send_mailgun_text_email
 from apps.users.models import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -138,19 +139,39 @@ def send_workspace_transactional_email(
     """
     if ws is None:
         return False
-    host = (ws.transactional_email_host or "").strip()
+    method = (getattr(ws, "transactional_email_method", "") or "smtp").strip().lower()
     from_addr = (ws.transactional_email_from_address or "").strip()
-    if not host or not from_addr:
+    if not from_addr:
         return False
     recipients = [e.strip() for e in to_emails if (e or "").strip()]
     if not recipients:
         return False
-    conn = _workspace_smtp_connection(ws)
-    if conn is None:
-        return False
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
     from_name = (ws.transactional_email_from_name or "").strip() or marketplace
     from_email = f"{from_name} <{from_addr}>" if from_name else from_addr
+    if method == "api":
+        provider = (getattr(ws, "transactional_email_provider", "") or "mailgun").strip().lower()
+        if provider != "mailgun":
+            return False
+        api_key = (getattr(ws, "transactional_email_api_key", "") or "").strip()
+        domain = (getattr(ws, "transactional_email_mailgun_domain", "") or "").strip()
+        region = (getattr(ws, "transactional_email_mailgun_region", "") or "us").strip()
+        return send_mailgun_text_email(
+            api_key=api_key,
+            domain=domain,
+            region=region,
+            from_email=from_email,
+            to_emails=recipients,
+            subject=subject,
+            text=body,
+        )
+
+    host = (ws.transactional_email_host or "").strip()
+    if not host:
+        return False
+    conn = _workspace_smtp_connection(ws)
+    if conn is None:
+        return False
     try:
         msg = EmailMessage(
             subject=subject,
@@ -189,9 +210,8 @@ def try_send_order_status_emails(
     ws = order.client.workspace
     if ws is None:
         return
-    host = (ws.transactional_email_host or "").strip()
     from_addr = (ws.transactional_email_from_address or "").strip()
-    if not host or not from_addr:
+    if not from_addr:
         return
 
     recipients = _status_change_recipient_emails(order, actor_id)

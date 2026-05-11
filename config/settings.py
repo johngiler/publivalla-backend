@@ -197,6 +197,18 @@ CELERY_TASK_EAGER_PROPAGATES = True
 _explicit_eager = (os.environ.get("CELERY_TASK_ALWAYS_EAGER", "").lower() in ("1", "true", "yes"))
 CELERY_TASK_ALWAYS_EAGER = _explicit_eager or (not CELERY_BROKER_URL)
 
+# En producción, siempre usar Redis/Celery (sin fallback).
+if not DEBUG and (os.environ.get("DJANGO_ENV") or "").strip().lower() == "production":
+    if not CELERY_BROKER_URL:
+        raise RuntimeError(
+            "Falta CELERY_BROKER_URL en producción. Configura Redis/Celery para ejecutar "
+            "correos transaccionales por cola."
+        )
+    if CELERY_TASK_ALWAYS_EAGER:
+        raise RuntimeError(
+            "CELERY_TASK_ALWAYS_EAGER no puede estar activo en producción cuando se exige cola."
+        )
+
 # CORS: en producción, cualquier SPA en `https://{slug}.{TENANT_BASE_DOMAIN}` (Nobis, Sambil, …)
 # sin tener que repetir cada origen en `CORS_ALLOWED_ORIGINS`. Requiere `TENANT_BASE_DOMAIN` (p. ej. publivalla.com).
 if not DEBUG and TENANT_BASE_DOMAIN:

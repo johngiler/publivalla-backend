@@ -42,6 +42,7 @@ from apps.workspaces.admin_dashboard_stats import AdminDashboardStatsView
 from apps.workspaces.views import (
     MyWorkspaceTransactionalSmtpTestStatusView,
     MyWorkspaceTransactionalSmtpTestView,
+    MyWorkspaceTransactionalRelayTestView,
     MyWorkspaceView,
     WorkspaceCurrentView,
 )
@@ -115,6 +116,11 @@ urlpatterns = [
         "api/me/workspace/test-transactional-smtp/",
         MyWorkspaceTransactionalSmtpTestView.as_view(),
         name="me-workspace-test-transactional-smtp",
+    ),
+    path(
+        "api/me/workspace/test-transactional-relay/",
+        MyWorkspaceTransactionalRelayTestView.as_view(),
+        name="me-workspace-test-transactional-relay",
     ),
     path("api/workspace/current/", WorkspaceCurrentView.as_view(), name="workspace-current"),
     path(

@@ -14,6 +14,7 @@ from apps.workspaces.serializers import (
     WorkspaceTransactionalSmtpTestSerializer,
 )
 from apps.workspaces.smtp_test import run_transactional_smtp_connection_test
+from apps.workspaces.mailgun_test import run_transactional_mailgun_auth_test
 from apps.workspaces.tenant import get_workspace_for_request
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,11 @@ class MyWorkspaceView(APIView):
             raw = request.data.get("transactional_email_password")
             ws.transactional_email_password = (str(raw).strip() if raw is not None else "")
             ws.save(update_fields=["transactional_email_password"])
+
+        if "transactional_email_api_key" in request.data:
+            raw = request.data.get("transactional_email_api_key")
+            ws.transactional_email_api_key = (str(raw).strip() if raw is not None else "")
+            ws.save(update_fields=["transactional_email_api_key"])
 
         if "logo" in request.FILES:
             ws.logo = request.FILES["logo"]
@@ -226,3 +232,47 @@ class MyWorkspaceTransactionalSmtpTestStatusView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class MyWorkspaceTransactionalRelayTestView(APIView):
+    """
+    POST: prueba credenciales del relay transaccional elegido (SMTP o API key).
+    No envía correo.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ws, code, body = _resolve_admin_editable_workspace(request)
+        if code is not None:
+            return Response(body, status=code)
+
+        d = request.data if isinstance(request.data, dict) else {}
+        method = (
+            (d.get("transactional_email_method") or ws.transactional_email_method or "smtp")
+            .strip()
+            .lower()
+        )
+        if method != "api":
+            return MyWorkspaceTransactionalSmtpTestView().post(request)
+
+        provider = (
+            (d.get("transactional_email_provider") or ws.transactional_email_provider or "mailgun")
+            .strip()
+            .lower()
+        )
+        if provider != "mailgun":
+            return Response({"detail": "Proveedor no soportado."}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_key = (d.get("transactional_email_api_key") or "").strip() or (
+            ws.transactional_email_api_key or ""
+        ).strip()
+        domain = (d.get("transactional_email_mailgun_domain") or "").strip() or (
+            ws.transactional_email_mailgun_domain or ""
+        ).strip()
+        region = (d.get("transactional_email_mailgun_region") or "").strip() or (
+            ws.transactional_email_mailgun_region or "us"
+        ).strip()
+
+        result = run_transactional_mailgun_auth_test(api_key=api_key, domain=domain, region=region)
+        return Response(result, status=status.HTTP_200_OK)

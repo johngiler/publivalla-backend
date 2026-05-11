@@ -179,6 +179,43 @@ class Workspace(TimeStampedActiveModel):
         help_text="Ej. nombre del marketplace; si está vacío se usa el nombre comercial del workspace.",
     )
 
+    # Método de envío transaccional: SMTP o proveedor por API (Mailgun por ahora).
+    transactional_email_method = models.CharField(
+        "Método de envío transaccional",
+        max_length=20,
+        blank=True,
+        default="smtp",
+        help_text="smtp: credenciales SMTP del formulario; api: relay por API key (Mailgun u otros en el futuro).",
+    )
+    transactional_email_provider = models.CharField(
+        "Proveedor API (si method=api)",
+        max_length=40,
+        blank=True,
+        default="",
+        help_text="Proveedor de relay por API key. Por ahora: mailgun.",
+    )
+    transactional_email_api_key = models.CharField(
+        "API key (si method=api)",
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Se guarda en base de datos. Mantener vacío para conservar la clave ya guardada.",
+    )
+    transactional_email_mailgun_domain = models.CharField(
+        "Mailgun domain",
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Dominio verificado en Mailgun, ej. mg.tudominio.com.",
+    )
+    transactional_email_mailgun_region = models.CharField(
+        "Mailgun region",
+        max_length=10,
+        blank=True,
+        default="us",
+        help_text="Región de Mailgun: us o eu (define el endpoint).",
+    )
+
     class Meta:
         ordering = ["slug"]
         verbose_name = "Workspace (owner)"

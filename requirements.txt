@@ -16,3 +16,4 @@ PyJWT==2.12.1
 python-dotenv==1.2.2
 sqlparse==0.5.5
 pypdf==6.0.0
+requests==2.32.4

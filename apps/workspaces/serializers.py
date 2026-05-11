@@ -84,6 +84,7 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
     """
 
     transactional_email_password_set = serializers.SerializerMethodField()
+    transactional_email_api_key_set = serializers.SerializerMethodField()
 
     class Meta(WorkspacePublicSerializer.Meta):
         fields = WorkspacePublicSerializer.Meta.fields + (
@@ -98,10 +99,18 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
             "transactional_email_password_set",
             "transactional_email_from_address",
             "transactional_email_from_name",
+            "transactional_email_method",
+            "transactional_email_provider",
+            "transactional_email_api_key_set",
+            "transactional_email_mailgun_domain",
+            "transactional_email_mailgun_region",
         )
 
     def get_transactional_email_password_set(self, obj):
         return bool((getattr(obj, "transactional_email_password", None) or "").strip())
+
+    def get_transactional_email_api_key_set(self, obj):
+        return bool((getattr(obj, "transactional_email_api_key", None) or "").strip())
 
 
 class WorkspaceMeUpdateSerializer(serializers.ModelSerializer):
@@ -127,4 +136,8 @@ class WorkspaceMeUpdateSerializer(serializers.ModelSerializer):
             "transactional_email_username",
             "transactional_email_from_address",
             "transactional_email_from_name",
+            "transactional_email_method",
+            "transactional_email_provider",
+            "transactional_email_mailgun_domain",
+            "transactional_email_mailgun_region",
         )
