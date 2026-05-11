@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.core.mail import EmailMessage, get_connection
+from django.core.mail import EmailMultiAlternatives, get_connection
 
 from apps.orders.models import Order, OrderStatus
 from apps.orders.mailgun_sender import send_mailgun_text_email
+from apps.orders.transactional_email_templates import (
+    OrderStatusAudience,
+    build_order_status_transactional_email,
+)
 from apps.users.models import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -107,6 +111,32 @@ def _status_change_recipient_emails(order: Order, actor_id: int | None) -> list[
     return _emails_client_and_admins(order)
 
 
+def _order_status_email_audience(order: Order, actor_id: int | None) -> OrderStatusAudience:
+    """
+    Alineado con _status_change_recipient_emails: define el tono del asunto y del cuerpo
+    (cliente del pedido, equipo del marketplace, o ambos).
+    """
+    if actor_id is None:
+        return "all"
+
+    try:
+        profile = UserProfile.objects.only(
+            "role", "workspace_id", "client_id"
+        ).get(user_id=actor_id)
+    except UserProfile.DoesNotExist:
+        return "all"
+
+    ws_id = order.client.workspace_id
+    if profile.role == UserProfile.Role.ADMIN and profile.workspace_id == ws_id:
+        return "client"
+    if (
+        profile.role == UserProfile.Role.CLIENT
+        and profile.client_id == order.client_id
+    ):
+        return "admins"
+    return "all"
+
+
 def _workspace_smtp_connection(ws):
     host = (ws.transactional_email_host or "").strip()
     if not host:
@@ -130,12 +160,13 @@ def send_workspace_transactional_email(
     to_emails: list[str],
     subject: str,
     body: str,
+    html_body: str | None = None,
 ) -> bool:
     """
-    Envía un correo usando solo la cuenta SMTP configurada en el workspace (Mi negocio).
+    Envía un correo con la configuración transaccional del workspace (Mi negocio): SMTP o API (Mailgun).
 
-    Retorna True si el mensaje se envió. Retorna False si falta workspace, SMTP incompleto,
-    no hay destinatarios o el envío falló (en ese caso también se registra la excepción).
+    ``body`` es texto plano; ``html_body`` opcional se envía como alternativa multipart / campo HTML en Mailgun.
+    Retorna False si falta remitente, relay incompleto, no hay destinatarios o el envío falló.
     """
     if ws is None:
         return False
@@ -164,6 +195,7 @@ def send_workspace_transactional_email(
             to_emails=recipients,
             subject=subject,
             text=body,
+            html=html_body,
         )
 
     host = (ws.transactional_email_host or "").strip()
@@ -173,13 +205,15 @@ def send_workspace_transactional_email(
     if conn is None:
         return False
     try:
-        msg = EmailMessage(
+        msg = EmailMultiAlternatives(
             subject=subject,
             body=body,
             from_email=from_email,
             to=recipients,
             connection=conn,
         )
+        if (html_body or "").strip():
+            msg.attach_alternative(html_body.strip(), "text/html")
         msg.send(fail_silently=False)
         return True
     except Exception:
@@ -233,32 +267,30 @@ def try_send_order_status_emails(
     except ValueError:
         from_label = from_status or ""
 
-    ref = (order.code or "").strip() or f"#{order.pk}"
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
-    subject = f"[{marketplace}] Pedido {ref}: {to_label}"
-    lines: list[str] = [
-        f"El pedido {ref} cambió de estado.",
-        "",
-        f"Estado anterior: {from_label or '—'}",
-        f"Estado actual: {to_label}",
-        "",
-        f"Cliente: {(order.client.company_name or '').strip() or '—'}",
-        "",
-        f"Consulta el detalle en tu cuenta: {_order_public_url(order)}",
-        "",
-        "Este mensaje lo envía el sistema de notificaciones del marketplace.",
-    ]
-    body = "\n".join(lines)
+    audience = _order_status_email_audience(order, actor_id)
+    accent = (getattr(ws, "primary_color", None) or "").strip() or None
+    subject, body, html_body = build_order_status_transactional_email(
+        marketplace_title=marketplace,
+        audience=audience,
+        order_code=(order.code or "").strip(),
+        previous_status_label=from_label,
+        new_status_label=to_label,
+        company_name=(order.client.company_name or "").strip(),
+        orders_url=_order_public_url(order),
+        accent_hex=accent,
+    )
 
     if not send_workspace_transactional_email(
         ws,
         to_emails=recipients,
         subject=subject,
         body=body,
+        html_body=html_body,
     ):
         logger.warning(
             "No se envió correo de cambio de estado (pedido %s, %s → %s); "
-            "revisa SMTP del workspace o el registro de errores anterior.",
+            "revisa el relay de correo del workspace o el registro de errores anterior.",
             order.pk,
             from_status,
             to_status,

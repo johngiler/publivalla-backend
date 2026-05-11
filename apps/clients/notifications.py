@@ -8,6 +8,9 @@ from django.core import signing
 
 from apps.clients.models import Client
 from apps.orders.email_notifications import send_workspace_transactional_email
+from apps.orders.transactional_email_templates import (
+    build_client_activation_transactional_email,
+)
 from apps.orders.models import Order
 from apps.users.models import UserProfile
 
@@ -54,14 +57,22 @@ def notify_client_after_order_client_approved(order: Order) -> None:
     base = getattr(settings, "FRONTEND_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
     link = f"{base}/activar-cuenta?token={quote(token)}"
 
-    subject = f"Tu solicitud fue aprobada — {client.company_name}"
-    greet = f"Hola {client.contact_name.strip()},\n\n" if client.contact_name.strip() else "Hola,\n\n"
-    body = (
-        greet
-        + f"La solicitud asociada a tu empresa ({client.company_name}) fue aprobada.\n"
-        + "Para acceder al marketplace con tu correo y gestionar tus órdenes, crea tu contraseña aquí:\n\n"
-        + f"{link}\n\n"
-        + "El enlace caduca en 14 días. Si ya creaste cuenta al comprar, inicia sesión con tu correo.\n"
+    ws = getattr(client, "workspace", None)
+    contact_line = ""
+    if (client.contact_name or "").strip():
+        contact_line = f"Hola {(client.contact_name or '').strip()},"
+    marketplace = ""
+    if ws is not None:
+        marketplace = (ws.marketplace_title or ws.name or "").strip() or (ws.slug or "")
+    if not marketplace:
+        marketplace = "Marketplace"
+    accent = (getattr(ws, "primary_color", None) or "").strip() if ws else None
+    subject, body, html_body = build_client_activation_transactional_email(
+        marketplace_title=marketplace,
+        company_name=client.company_name or "",
+        contact_first_line=contact_line,
+        activation_url=link,
+        accent_hex=accent,
     )
 
     to_addr = (client.email or "").strip()
@@ -73,16 +84,16 @@ def notify_client_after_order_client_approved(order: Order) -> None:
         )
         return
 
-    ws = getattr(client, "workspace", None)
     if not send_workspace_transactional_email(
         ws,
         to_emails=[to_addr],
         subject=subject,
         body=body,
+        html_body=html_body,
     ):
         logger.warning(
             "No se envió correo de activación para cliente %s (orden %s). "
-            "Configura SMTP y remitente en Mi negocio o revisa el registro de errores. Enlace: %s",
+            "Configura el envío de correo y el remitente en Mi negocio o revisa el registro de errores. Enlace: %s",
             client.pk,
             order.pk,
             link,

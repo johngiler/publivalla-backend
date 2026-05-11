@@ -23,6 +23,7 @@ def send_mailgun_text_email(
     to_emails: list[str],
     subject: str,
     text: str,
+    html: str | None = None,
 ) -> bool:
     key = (api_key or "").strip()
     dom = (domain or "").strip()
@@ -40,6 +41,8 @@ def send_mailgun_text_email(
         "subject": subject,
         "text": text,
     }
+    if (html or "").strip():
+        data["html"] = html.strip()
     try:
         res = requests.post(url, auth=("api", key), data=data, timeout=25)
         if 200 <= res.status_code < 300:
