@@ -11,7 +11,12 @@ from django.conf import settings
 from django.db import models
 
 from apps.common.models import TimeStampedActiveModel
-from apps.common.utils.media_layout import workspace_brand_upload
+from apps.common.utils.media_layout import (
+    workspace_brand_favicon_upload,
+    workspace_brand_logo_mark_upload,
+    workspace_brand_logo_png_artifacts_upload,
+    workspace_brand_logo_upload,
+)
 from apps.workspaces.validators import (
     validate_brand_graphic,
     validate_favicon_file,
@@ -37,7 +42,7 @@ class Workspace(TimeStampedActiveModel):
     )
     logo = models.FileField(
         "Logo (logotipo completo)",
-        upload_to=workspace_brand_upload("logos"),
+        upload_to=workspace_brand_logo_upload,
         blank=True,
         null=True,
         validators=[validate_brand_graphic],
@@ -46,7 +51,7 @@ class Workspace(TimeStampedActiveModel):
     )
     logo_mark = models.FileField(
         "Isotipo",
-        upload_to=workspace_brand_upload("logo_marks"),
+        upload_to=workspace_brand_logo_mark_upload,
         blank=True,
         null=True,
         validators=[validate_brand_graphic],
@@ -55,7 +60,7 @@ class Workspace(TimeStampedActiveModel):
     )
     favicon = models.FileField(
         "Favicon",
-        upload_to=workspace_brand_upload("favicons"),
+        upload_to=workspace_brand_favicon_upload,
         blank=True,
         null=True,
         validators=[validate_favicon_file],
@@ -63,7 +68,7 @@ class Workspace(TimeStampedActiveModel):
     )
     logo_png_artifacts = models.FileField(
         "Logo PNG (correo, PDF y similares)",
-        upload_to=workspace_brand_upload("logo_png_artifacts"),
+        upload_to=workspace_brand_logo_png_artifacts_upload,
         blank=True,
         null=True,
         validators=[validate_png_artifacts],

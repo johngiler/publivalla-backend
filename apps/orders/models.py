@@ -2,7 +2,13 @@ from django.conf import settings
 from django.db import models
 
 from apps.common.models import TimeStampedActiveModel
-from apps.common.utils.media_layout import order_attachment_upload, order_related_upload
+from apps.common.utils.media_layout import (
+    order_art_attachment_upload,
+    order_generated_document_upload,
+    order_installation_permit_pdf_upload,
+    order_payment_receipt_upload,
+    order_signed_document_upload,
+)
 
 
 class OrderPaymentMethod(models.TextChoices):
@@ -59,7 +65,7 @@ class Order(TimeStampedActiveModel):
         db_index=True,
     )
     payment_receipt = models.FileField(
-        upload_to=order_related_upload("orders", "receipts"),
+        upload_to=order_payment_receipt_upload,
         blank=True,
         null=True,
         help_text="Comprobante subido por el cliente en checkout (media/<slug>/orders/receipts/…; histórico: orders/receipts/…).",
@@ -83,25 +89,25 @@ class Order(TimeStampedActiveModel):
         help_text="Observaciones en hoja de negociación (líneas del pedido, texto libre).",
     )
     negotiation_sheet_pdf = models.FileField(
-        upload_to=order_related_upload("orders", "generated"),
+        upload_to=order_generated_document_upload,
         blank=True,
         null=True,
         help_text="Hoja de negociación generada al aprobar la solicitud (histórico: orders/generated/…).",
     )
     municipality_authorization_pdf = models.FileField(
-        upload_to=order_related_upload("orders", "generated"),
+        upload_to=order_generated_document_upload,
         blank=True,
         null=True,
         help_text="Carta de autorización para trámite en alcaldía (histórico: orders/generated/…).",
     )
     invoice_pdf = models.FileField(
-        upload_to=order_related_upload("orders", "generated"),
+        upload_to=order_generated_document_upload,
         blank=True,
         null=True,
         help_text="Factura PDF generada al marcar como facturada (histórico: orders/generated/…).",
     )
     negotiation_sheet_signed = models.FileField(
-        upload_to=order_related_upload("orders", "signed"),
+        upload_to=order_signed_document_upload,
         blank=True,
         null=True,
         help_text="Hoja de negociación firmada por el cliente (histórico: orders/signed/…).",
@@ -216,7 +222,7 @@ class OrderArtAttachment(TimeStampedActiveModel):
         help_text="Línea del pedido (toma) a la que aplica el archivo; obligatorio si el pedido tiene varias líneas.",
     )
     file = models.FileField(
-        upload_to=order_attachment_upload("orders", "arts"),
+        upload_to=order_art_attachment_upload,
         help_text="Arte adjunto (media/<slug>/orders/arts/…; histórico: orders/arts/…).",
     )
 
@@ -249,7 +255,7 @@ class OrderInstallationPermit(TimeStampedActiveModel):
         help_text="Referencia o expediente municipal si aplica.",
     )
     request_pdf = models.FileField(
-        upload_to=order_attachment_upload("orders", "installation_permits"),
+        upload_to=order_installation_permit_pdf_upload,
         blank=True,
         null=True,
         help_text="PDF generado al enviar la solicitud (media/<slug>/orders/installation_permits/…; histórico: orders/installation_permits/…).",

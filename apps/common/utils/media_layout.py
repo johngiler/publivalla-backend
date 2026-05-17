@@ -46,19 +46,25 @@ def _join_under_workspace_slug(workspace_slug: str, *relative_parts: str, filena
     return os.path.join(workspace_slug, *relative_parts, ym, fn)
 
 
-def workspace_brand_upload(subdir: str):
-    """
-    ``upload_to`` para campos File/Image en el modelo ``Workspace``.
+def _workspace_brand_file_upload(instance, filename: str, subdir: str) -> str:
+    slug = _safe_owner_slug_from_workspace(instance)
+    return _join_under_workspace_slug(slug, "workspaces", subdir, filename=filename)
 
-    Genera rutas del tipo::
-        <slug>/workspaces/logos|logo_marks|favicons|logo_png_artifacts/%Y/%m/<filename>
-    """
 
-    def inner(instance, filename: str) -> str:
-        slug = _safe_owner_slug_from_workspace(instance)
-        return _join_under_workspace_slug(slug, "workspaces", subdir, filename=filename)
+def workspace_brand_logo_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "logos")
 
-    return inner
+
+def workspace_brand_logo_mark_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "logo_marks")
+
+
+def workspace_brand_favicon_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "favicons")
+
+
+def workspace_brand_logo_png_artifacts_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "logo_png_artifacts")
 
 
 def _workspace_from_shopping_center(instance) -> object | None:
@@ -168,20 +174,23 @@ def _workspace_from_order(order) -> object | None:
     return _workspace_from_client(cl)
 
 
-def order_related_upload(*path_segments: str):
-    """
-    ``upload_to`` para campos en ``Order`` (el ``instance`` es el pedido).
+def _order_file_upload(instance, filename: str, *path_segments: str) -> str:
+    ws = _workspace_from_order(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, *path_segments, filename=filename)
 
-    Ej. ``order_related_upload("orders", "receipts")`` →
-    ``<slug>/orders/receipts/%Y/%m/<filename>``.
-    """
 
-    def inner(instance, filename: str) -> str:
-        ws = _workspace_from_order(instance)
-        owner = _safe_owner_slug_from_workspace(ws)
-        return _join_under_workspace_slug(owner, *path_segments, filename=filename)
+def order_payment_receipt_upload(instance, filename: str) -> str:
+    return _order_file_upload(instance, filename, "orders", "receipts")
 
-    return inner
+
+def order_generated_document_upload(instance, filename: str) -> str:
+    """PDFs generados (negociación, alcaldía, factura)."""
+    return _order_file_upload(instance, filename, "orders", "generated")
+
+
+def order_signed_document_upload(instance, filename: str) -> str:
+    return _order_file_upload(instance, filename, "orders", "signed")
 
 
 def _workspace_from_order_fk(instance, order_attr: str = "order"):
@@ -194,14 +203,17 @@ def _workspace_from_order_fk(instance, order_attr: str = "order"):
     return _workspace_from_order(order)
 
 
-def order_attachment_upload(*path_segments: str):
-    """
-    ``upload_to`` para modelos con FK ``order`` (p. ej. arte adjunto, permiso de instalación).
-    """
+def _order_attachment_file_upload(instance, filename: str, *path_segments: str) -> str:
+    ws = _workspace_from_order_fk(instance, "order")
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, *path_segments, filename=filename)
 
-    def inner(instance, filename: str) -> str:
-        ws = _workspace_from_order_fk(instance, "order")
-        owner = _safe_owner_slug_from_workspace(ws)
-        return _join_under_workspace_slug(owner, *path_segments, filename=filename)
 
-    return inner
+def order_art_attachment_upload(instance, filename: str) -> str:
+    return _order_attachment_file_upload(instance, filename, "orders", "arts")
+
+
+def order_installation_permit_pdf_upload(instance, filename: str) -> str:
+    return _order_attachment_file_upload(
+        instance, filename, "orders", "installation_permits"
+    )
