@@ -17,7 +17,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.ad_spaces.models import AdSpace, AdSpaceImage
-from apps.common.image_webp import DEFAULT_WEBP_QUALITY, ensure_imagefields_webp, raster_bytes_to_webp
+from apps.common.utils.image_webp import DEFAULT_WEBP_QUALITY, ensure_imagefields_webp, raster_bytes_to_webp
 from apps.malls.models import ShoppingCenter
 
 

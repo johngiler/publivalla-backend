@@ -1,7 +1,7 @@
 from django.db import models
 
-from apps.common.image_webp import ensure_imagefields_webp
-from apps.common.media_layout import UPLOAD_CENTERS_COVERS
+from apps.common.utils.image_webp import ensure_imagefields_webp
+from apps.common.utils.media_layout import shopping_center_cover_upload
 from apps.common.models import TimeStampedActiveModel
 
 
@@ -30,10 +30,10 @@ class ShoppingCenter(TimeStampedActiveModel):
     website = models.URLField(blank=True)
     description = models.TextField(blank=True)
     cover_image = models.ImageField(
-        upload_to=UPLOAD_CENTERS_COVERS,
+        upload_to=shopping_center_cover_upload,
         blank=True,
         null=True,
-        help_text="Portada del centro: media/centers/covers/AÑO/MES/ (no mezclar con tomas).",
+        help_text="Portada del centro: media/<slug>/centers/covers/AÑO/MES/ (histórico: centers/covers/…).",
     )
     on_homepage = models.BooleanField(
         default=True,
@@ -53,7 +53,7 @@ class ShoppingCenter(TimeStampedActiveModel):
         max_length=255,
         blank=True,
         default="",
-        help_text="Razón social del arrendador (Constructora Sambil, C.A., etc.).",
+        help_text="Razón social del arrendador (Constructora Acme, C.A., etc.).",
     )
     lessor_rif = models.CharField(
         max_length=32,

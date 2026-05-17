@@ -1,8 +1,0 @@
-/* El enlace de la primera columna del changelist suele verse más pequeño que el resto. */
-#changelist #result_list tbody td.field-code,
-#changelist #result_list tbody td.field-code a {
-  font-size: 0.875rem;
-  line-height: 1.35;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
-}

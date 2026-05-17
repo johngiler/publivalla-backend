@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-#
-# Deploy Sambil backend a api.publivalla.com (sambil-api).
-# Requiere: rsync, SSH Host sambil-api -> api.publivalla.com (root o usuario con sudo).
-# Destino: /home/git/backend (Gunicorn vía systemd).
-#
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REMOTE_HOST="sambil-api"
+REMOTE_HOST="publivalla-api"
 REMOTE_PATH="/home/git/backend"
 
 RSYNC_EXCLUDE=(
@@ -17,7 +12,7 @@ RSYNC_EXCLUDE=(
   --exclude "__pycache__"
   --exclude "*.pyc"
   --exclude ".env"
-  --exclude "config/local_settings.py"
+  --exclude "config/settings/local_settings.py"
   --exclude "db.sqlite3"
   --exclude "staticfiles"
   --exclude "media"
@@ -37,6 +32,6 @@ ssh "$REMOTE_HOST" "chmod 755 /home/git /home/git/backend"
 ssh "$REMOTE_HOST" "cd $REMOTE_PATH && sudo -u git .venv/bin/pip install -q -r requirements.txt && sudo -u git .venv/bin/python manage.py migrate --noinput && sudo -u git .venv/bin/python manage.py collectstatic --noinput --clear 2>/dev/null || true"
 # Estáticos y media: propietario git, grupo www-data (Nginx), setgid en dirs para que collectstatic deje g+r sin chmod o+rx.
 ssh "$REMOTE_HOST" "for d in $REMOTE_PATH/staticfiles $REMOTE_PATH/media; do [ -d \"\$d\" ] || continue; chown -R git:www-data \"\$d\"; find \"\$d\" -type d -exec chmod 2775 {} \\;; find \"\$d\" -type f -exec chmod 664 {} \\;; done"
-ssh "$REMOTE_HOST" "systemctl restart sambil-api 2>/dev/null || true; systemctl reload nginx 2>/dev/null || true"
+ssh "$REMOTE_HOST" "systemctl restart publivalla-api 2>/dev/null || true; systemctl reload nginx 2>/dev/null || true"
 
 echo "[deploy] Done. https://api.publivalla.com"

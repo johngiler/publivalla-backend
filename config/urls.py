@@ -10,39 +10,42 @@ admin.site.site_title = _("Admin")
 admin.site.index_title = _("Inicio")
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from apps.ad_spaces.admin_viewsets import AdSpaceAdminViewSet
-from apps.ad_spaces.views import AdSpaceViewSet
-from apps.clients.marketplace_client_views import (
+from apps.ad_spaces.views import AdSpaceAdminViewSet, AdSpaceViewSet
+from apps.clients.views import (
+    ClientViewSet,
+    MyCompanyView,
     MyContractsView,
     MyFavoriteDetailView,
     MyFavoritesView,
 )
-from apps.clients.views import ClientViewSet, MyCompanyView
-from apps.malls.admin_viewsets import MountingProviderAdminViewSet, ShoppingCenterAdminViewSet
-from apps.malls.views import ShoppingCenterViewSet
-from apps.orders.guest_checkout import (
+from apps.malls.views import (
+    MountingProviderAdminViewSet,
+    ShoppingCenterAdminViewSet,
+    ShoppingCenterViewSet,
+)
+from apps.orders.views import (
+    AdminMarketplaceContractsView,
     GuestCheckoutClientEmailCheckView,
     GuestCheckoutDatosValidateView,
     GuestCheckoutEmailCheckView,
     GuestCheckoutView,
+    OrderViewSet,
 )
-from apps.orders.admin_contracts_view import AdminMarketplaceContractsView
-from apps.orders.views import OrderViewSet
-from apps.users.admin_viewsets import UserAdminViewSet
 from apps.users.views import (
     ActivateClientAccountView,
     MePasswordView,
     MeView,
     PasswordSetupIntentView,
     SetInitialPasswordView,
+    UserAdminViewSet,
     ValidatePasswordView,
 )
-from apps.workspaces.admin_activity_feed import AdminDashboardActivityView
-from apps.workspaces.admin_dashboard_stats import AdminDashboardStatsView
 from apps.workspaces.views import (
+    AdminDashboardActivityView,
+    AdminDashboardStatsView,
+    MyWorkspaceTransactionalRelayTestView,
     MyWorkspaceTransactionalSmtpTestStatusView,
     MyWorkspaceTransactionalSmtpTestView,
-    MyWorkspaceTransactionalRelayTestView,
     MyWorkspaceView,
     WorkspaceCurrentView,
 )

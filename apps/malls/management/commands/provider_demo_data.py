@@ -7,7 +7,7 @@ localizarlos con ``--reset``.
 Uso::
 
     python manage.py provider_demo_data
-    python manage.py provider_demo_data --workspace-slug sambil
+    python manage.py provider_demo_data --workspace-slug acme
     python manage.py provider_demo_data --shopping-center-id 1
     python manage.py provider_demo_data --shopping-center-slug scc
     python manage.py provider_demo_data --reset
@@ -134,8 +134,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--workspace-slug",
             type=str,
-            default="sambil",
-            help="Slug del workspace (default: sambil).",
+            default="acme",
+            help="Slug del workspace (default: acme).",
         )
         parser.add_argument(
             "--shopping-center-id",
@@ -205,7 +205,8 @@ class Command(BaseCommand):
                 )
                 if created:
                     created_n += 1
-                    self.stdout.write(self.style.SUCCESS(f"Creado: {company_name}"))
+                    self.stdout.write(self.style.SUCCESS(
+                        f"Creado: {company_name}"))
                 else:
                     skipped_n += 1
                     self.stdout.write(f"Ya existía (omitido): {company_name}")

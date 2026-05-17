@@ -11,7 +11,12 @@ from django.conf import settings
 from django.db import models
 
 from apps.common.models import TimeStampedActiveModel
-from apps.workspaces.validators import validate_brand_graphic, validate_favicon_file
+from apps.common.utils.media_layout import workspace_brand_upload
+from apps.workspaces.validators import (
+    validate_brand_graphic,
+    validate_favicon_file,
+    validate_png_artifacts,
+)
 
 
 class Workspace(TimeStampedActiveModel):
@@ -32,27 +37,39 @@ class Workspace(TimeStampedActiveModel):
     )
     logo = models.FileField(
         "Logo (logotipo completo)",
-        upload_to="workspaces/logos/%Y/%m/",
+        upload_to=workspace_brand_upload("logos"),
         blank=True,
         null=True,
         validators=[validate_brand_graphic],
-        help_text="Marca completa con tipografía (logotipo). Cabecera amplia, pie, emails. Formatos: SVG, PNG, JPEG, GIF o WebP.",
+        help_text="Marca completa con tipografía (logotipo). Cabecera amplia, pie, emails. Formatos: SVG, PNG, JPEG, GIF o WebP. "
+        "Almacenamiento bajo media/<slug>/workspaces/logos/…",
     )
     logo_mark = models.FileField(
         "Isotipo",
-        upload_to="workspaces/logo_marks/%Y/%m/",
+        upload_to=workspace_brand_upload("logo_marks"),
         blank=True,
         null=True,
         validators=[validate_brand_graphic],
-        help_text="Símbolo o marca reducida sin el nombre extendido (header compacto, favicon si no subes uno aparte). Mismos formatos que el logo.",
+        help_text="Símbolo o marca reducida sin el nombre extendido (header compacto, favicon si no subes uno aparte). Mismos formatos que el logo. "
+        "media/<slug>/workspaces/logo_marks/…",
     )
     favicon = models.FileField(
         "Favicon",
-        upload_to="workspaces/favicons/%Y/%m/",
+        upload_to=workspace_brand_upload("favicons"),
         blank=True,
         null=True,
         validators=[validate_favicon_file],
-        help_text="Icono de pestaña del navegador. SVG, PNG, ICO, JPEG, GIF o WebP.",
+        help_text="Icono de pestaña del navegador. SVG, PNG, ICO, JPEG, GIF o WebP. media/<slug>/workspaces/favicons/…",
+    )
+    logo_png_artifacts = models.FileField(
+        "Logo PNG (correo, PDF y similares)",
+        upload_to=workspace_brand_upload("logo_png_artifacts"),
+        blank=True,
+        null=True,
+        validators=[validate_png_artifacts],
+        help_text="Solo PNG. Se usa en correos transaccionales y PDFs del pedido donde no aplica SVG. "
+        "Opcional si ya subes mapas de bits en logotipo/isotipo; recomendado si solo usas SVG en marca. "
+        "media/<slug>/workspaces/logo_png_artifacts/…",
     )
     primary_color = models.CharField(
         "Color primario",

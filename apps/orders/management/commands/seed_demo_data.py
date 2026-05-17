@@ -1,5 +1,5 @@
 """
-Genera clientes y pedidos realistas para el workspace «sambil» (previsualizar dashboards).
+Genera clientes y pedidos realistas para el workspace «acme» (previsualizar dashboards).
 
 - No modifica centros, tomas ni usuarios.
 - Cinco empresas cliente (sin usuarios vinculados); RIF fijos para idempotencia con --reset.
@@ -10,7 +10,7 @@ Uso::
 
     python manage.py seed_demo_data
     python manage.py seed_demo_data --reset
-    python manage.py seed_demo_data --workspace-slug sambil
+    python manage.py seed_demo_data --workspace-slug acme
 
 Requisitos: workspace existente y tomas en catálogo suficientes para colocar contratos
 según la duración mínima de reserva, sin solaparse con reservas ya existentes en pipeline.
@@ -31,7 +31,7 @@ from apps.ad_spaces.models import AdSpace
 from apps.clients.models import Client, ClientStatus
 from apps.orders.models import Order, OrderItem, OrderStatus, OrderStatusEvent, OrderPaymentMethod
 from apps.orders.services import log_order_status_transition
-from apps.orders.validators import (
+from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     contract_meets_min_months,
     line_subtotal,
@@ -168,15 +168,15 @@ def _emit_status_chain(order: Order, statuses: list[str], t0: datetime, rng: ran
 
 class Command(BaseCommand):
     help = (
-        "Crea clientes y pedidos de demostración realistas para el workspace sambil "
+        "Crea clientes y pedidos de demostración realistas para el workspace acme "
         "(gráficas del panel admin). No altera centros, tomas ni usuarios."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--workspace-slug",
-            default="sambil",
-            help="Slug del workspace (default: sambil).",
+            default="acme",
+            help="Slug del workspace (default: acme).",
         )
         parser.add_argument(
             "--reset",
@@ -191,16 +191,18 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        slug = (options["workspace_slug"] or "sambil").strip().lower()
+        slug = (options["workspace_slug"] or "acme").strip().lower()
         reset = bool(options["reset"])
         rng = random.Random(int(options["seed"]))
 
         ws = Workspace.objects.filter(slug=slug, is_active=True).first()
         if ws is None:
-            raise CommandError(f'No existe un workspace activo con slug "{slug}".')
+            raise CommandError(
+                f'No existe un workspace activo con slug "{slug}".')
 
         spaces = list(
-            AdSpace.objects.filter(shopping_center__workspace=ws, is_active=True).order_by("id")
+            AdSpace.objects.filter(
+                shopping_center__workspace=ws, is_active=True).order_by("id")
         )
         if len(spaces) < 4:
             raise CommandError(
@@ -211,9 +213,11 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             if reset:
-                deleted, _ = Order.objects.filter(client__workspace=ws, client__rif__in=rif_list).delete()
+                deleted, _ = Order.objects.filter(
+                    client__workspace=ws, client__rif__in=rif_list).delete()
                 if deleted and self.verbosity >= 1:
-                    self.stdout.write(self.style.WARNING(f"Pedidos eliminados (reset): {deleted} filas en cascada."))
+                    self.stdout.write(self.style.WARNING(
+                        f"Pedidos eliminados (reset): {deleted} filas en cascada."))
 
             clients: list[Client] = []
             for row in SEED_CLIENTS:
@@ -274,7 +278,8 @@ class Command(BaseCommand):
                 specs.append(
                     (
                         25 + mb * 3,
-                        rng.choice([OrderStatus.EXPIRED, OrderStatus.ACTIVE, OrderStatus.EXPIRED]),
+                        rng.choice(
+                            [OrderStatus.EXPIRED, OrderStatus.ACTIVE, OrderStatus.EXPIRED]),
                         -400 + mb * 28,
                         6,
                     )
@@ -302,11 +307,14 @@ class Command(BaseCommand):
 
             for days_ago, final_status, start_off, n_months in specs:
                 client = clients[space_cursor % len(clients)]
-                created_dt = now - timedelta(days=days_ago, hours=rng.randint(0, 23), minutes=rng.randint(0, 59))
+                created_dt = now - \
+                    timedelta(days=days_ago, hours=rng.randint(
+                        0, 23), minutes=rng.randint(0, 59))
                 start = today + timedelta(days=start_off)
                 end = _contract_end_inclusive(start, n_months)
                 if not contract_meets_min_months(start, end):
-                    end = _contract_end_inclusive(start, MIN_RESERVATION_CALENDAR_MONTHS)
+                    end = _contract_end_inclusive(
+                        start, MIN_RESERVATION_CALENDAR_MONTHS)
                 if final_status == OrderStatus.ACTIVE and end < today:
                     start = today - timedelta(days=rng.randint(60, 100))
                     end = _contract_end_inclusive(start, rng.randint(8, 14))
@@ -360,7 +368,8 @@ class Command(BaseCommand):
                 OrderStatusEvent.objects.filter(order_id=order.pk).delete()
 
                 if final_status == OrderStatus.DRAFT:
-                    log_order_status_transition(order, "", OrderStatus.DRAFT, created_at=created_dt)
+                    log_order_status_transition(
+                        order, "", OrderStatus.DRAFT, created_at=created_dt)
                 else:
                     chain = _chain_to_status(final_status)
                     _emit_status_chain(order, chain, created_dt, rng)
@@ -400,12 +409,15 @@ class Command(BaseCommand):
 
                 submitted_val = None
                 if final_status != OrderStatus.DRAFT:
-                    submitted_val = created_dt + timedelta(hours=rng.randint(2, 72))
+                    submitted_val = created_dt + \
+                        timedelta(hours=rng.randint(2, 72))
                     if days_ago > 60 and final_status in (OrderStatus.ACTIVE, OrderStatus.EXPIRED):
                         mb = min(12, max(1, days_ago // 30))
-                        submitted_val = _pick_submitted_in_month(today, mb, rng)
+                        submitted_val = _pick_submitted_in_month(
+                            today, mb, rng)
                     if submitted_val < created_dt:
-                        submitted_val = created_dt + timedelta(hours=rng.randint(4, 96))
+                        submitted_val = created_dt + \
+                            timedelta(hours=rng.randint(4, 96))
 
                 Order.objects.filter(pk=order.pk).update(
                     status=final_status,

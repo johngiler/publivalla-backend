@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-#
-# Configuración inicial del servidor API Sambil (Ubuntu). Ejecutar como root en api.publivalla.com.
-# Instala: Postgres, Nginx, Certbot, Python venv + dependencias para Django/psycopg2.
-#
-# Después: copiar backend a /home/git/backend, crear .env y local_settings.py, ejecutar init_db.sh, venv, nginx, certbot, systemd.
-#
 
 set -e
 
@@ -39,7 +33,8 @@ chown -R www-data:www-data /var/www/letsencrypt
 echo "[setup] Done. Next steps:"
 echo "  1. Copiar código del backend a /home/git/backend (clone o rsync inicial)"
 echo "  2. Copiar .env a /home/git/backend/.env"
-echo "  3. Copiar config/local_settings.production.example.py -> /home/git/backend/config/local_settings.py"
+echo "  3. Copiar config/settings/local_settings.production.example.py -> /home/git/backend/config/settings/local_settings.py"
 echo "  4. Ejecutar scripts/init_db.sh (como root o postgres) para crear la base"
 echo "  5. Como git: cd /home/git/backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
-echo "  6. Instalar nginx-api-http-only.conf, certbot, luego nginx-api.publivalla.com.conf y sambil-api.service (ver DEPLOY.md)"
+echo "  6. migrate y: .venv/bin/python manage.py ensure_default_workspace  (workspace placeholder acme)"
+echo "  7. Instalar scripts/nginx/nginx-api-http-only.conf, certbot, luego scripts/nginx/nginx-api.publivalla.com.conf, scripts/systemd/publivalla-api.service y scripts/systemd/publivalla-celery.service"

@@ -1,17 +1,19 @@
-"""Validadores de archivos de branding (SVG + mapas de bits)."""
+"""Compat: migraciones y modelos importan ``apps.workspaces.validators``."""
 
-from django.core.validators import FileExtensionValidator
-
-# Logos / isotipo: raster + vector. ImageField de Django usa Pillow y rechaza SVG.
-BRAND_GRAPHIC_EXTENSIONS = ("svg", "png", "jpg", "jpeg", "gif", "webp")
-FAVICON_EXTENSIONS = BRAND_GRAPHIC_EXTENSIONS + ("ico",)
-
-validate_brand_graphic = FileExtensionValidator(
-    allowed_extensions=BRAND_GRAPHIC_EXTENSIONS,
-    message="Formato no admitido. Usa SVG, PNG, JPEG, GIF o WebP.",
+from apps.workspaces.utils.workspace_validators import (
+    BRAND_GRAPHIC_EXTENSIONS,
+    FAVICON_EXTENSIONS,
+    PNG_ARTIFACTS_EXTENSIONS,
+    validate_brand_graphic,
+    validate_favicon_file,
+    validate_png_artifacts,
 )
 
-validate_favicon_file = FileExtensionValidator(
-    allowed_extensions=FAVICON_EXTENSIONS,
-    message="Formato no admitido. Usa SVG, PNG, ICO, JPEG, GIF o WebP.",
-)
+__all__ = [
+    "BRAND_GRAPHIC_EXTENSIONS",
+    "FAVICON_EXTENSIONS",
+    "PNG_ARTIFACTS_EXTENSIONS",
+    "validate_brand_graphic",
+    "validate_favicon_file",
+    "validate_png_artifacts",
+]

@@ -2,6 +2,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.common.utils.media_layout import user_profile_cover_upload
+
 
 class UserProfile(models.Model):
     """
@@ -31,9 +33,10 @@ class UserProfile(models.Model):
         db_index=True,
     )
     cover_image = models.ImageField(
-        upload_to="covers/users/%Y/%m/",
+        upload_to=user_profile_cover_upload,
         blank=True,
         null=True,
+        help_text="Foto de perfil: media/<slug>/users/covers/AÑO/MES/ (histórico: covers/users/…).",
     )
     client = models.ForeignKey(
         "clients.Client",

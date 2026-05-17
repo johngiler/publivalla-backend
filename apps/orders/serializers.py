@@ -3,9 +3,9 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.ad_spaces.covers import ad_space_effective_cover_url
+from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace
-from apps.catalog_access import shopping_center_allows_public_catalog
+from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.clients.models import Client
 from apps.orders.models import (
     Order,
@@ -18,7 +18,7 @@ from apps.orders.models import (
 )
 from apps.malls.models import ShoppingCenter, ShoppingCenterMountingProvider
 from apps.orders.services import default_invoice_number_for_order, log_order_status_transition
-from apps.orders.validators import (
+from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
     contract_meets_min_months,
@@ -396,6 +396,23 @@ class OrderClientPaymentPatchSerializer(serializers.ModelSerializer):
             new = instance.payment_receipt
             if new and getattr(old_receipt, "name", None) != getattr(new, "name", None):
                 old_receipt.delete(save=False)
+        if has_new:
+            req = self.context.get("request")
+            aid = (
+                req.user.pk
+                if req and getattr(req, "user", None) is not None and req.user.is_authenticated
+                else None
+            )
+            oid = instance.pk
+
+            def _enqueue() -> None:
+                from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
+
+                schedule_send_order_client_activity_admin_emails(
+                    oid, "payment_receipt", actor_id=aid
+                )
+
+            transaction.on_commit(_enqueue)
         return instance
 
 
@@ -489,7 +506,7 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         import logging
 
-        from apps.orders.document_generation import (
+        from apps.orders.utils.document_generation import (
             generate_invoice_pdf_for_order,
             generate_negotiation_and_municipality_pdfs,
             regenerate_negotiation_sheet_pdf_for_order,
@@ -654,6 +671,23 @@ class OrderClientNegotiationSignedSerializer(serializers.ModelSerializer):
         new = instance.negotiation_sheet_signed
         if old and new and getattr(old, "name", None) != getattr(new, "name", None):
             old.delete(save=False)
+        if "negotiation_sheet_signed" in validated_data:
+            req = self.context.get("request")
+            aid = (
+                req.user.pk
+                if req and getattr(req, "user", None) is not None and req.user.is_authenticated
+                else None
+            )
+            oid = instance.pk
+
+            def _enqueue() -> None:
+                from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
+
+                schedule_send_order_client_activity_admin_emails(
+                    oid, "negotiation_signed", actor_id=aid
+                )
+
+            transaction.on_commit(_enqueue)
         return instance
 
 

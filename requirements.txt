@@ -5,8 +5,6 @@ redis==5.2.1
 gunicorn==23.0.0
 Pillow==12.0.0
 reportlab==4.4.7
-# <1.6 evita rlpycairo → pycairo (compila contra Cairo; en VPS sin pkg-config/libcairo falla el deploy).
-svglib==1.5.1
 openpyxl==3.1.5
 django-cors-headers==4.9.0
 djangorestframework==3.17.1

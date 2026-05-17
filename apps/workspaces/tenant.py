@@ -72,7 +72,8 @@ def resolve_request_workspace(request) -> tuple[Workspace | None, str | None]:
     error_code: 'unknown_slug' si se infirió un slug explícito que no existe en BD.
     """
     header_slug = (
-        request.META.get("HTTP_X_WORKSPACE_SLUG") or request.META.get("HTTP_X_TENANT_SLUG") or ""
+        request.META.get("HTTP_X_WORKSPACE_SLUG") or request.META.get(
+            "HTTP_X_TENANT_SLUG") or ""
     ).strip().lower()
     if header_slug and header_slug not in RESERVED_SUBDOMAINS:
         ws = Workspace.objects.filter(slug=header_slug, is_active=True).first()
@@ -108,7 +109,7 @@ def default_workspace_slug() -> str:
     raw = getattr(settings, "DEFAULT_WORKSPACE_SLUG", None)
     if isinstance(raw, str) and raw.strip():
         return raw.strip().lower()
-    return "sambil"
+    return "acme"
 
 
 def get_default_workspace_safely() -> Workspace | None:
@@ -139,9 +140,11 @@ def spa_public_base_url(ws: Workspace | None) -> str:
     apex = _tenant_apex_for_resolution()
     if apex:
         if apex == "localhost":
-            port = (os.environ.get("FRONTEND_DEV_PORT") or "3000").strip() or "3000"
+            port = (os.environ.get("FRONTEND_DEV_PORT")
+                    or "3000").strip() or "3000"
             return f"http://{slug}.localhost:{port}".rstrip("/")
-        scheme = (os.environ.get("FRONTEND_URL_SCHEME") or "https").strip().lower()
+        scheme = (os.environ.get("FRONTEND_URL_SCHEME")
+                  or "https").strip().lower()
         if scheme not in ("http", "https"):
             scheme = "https"
         return f"{scheme}://{slug}.{apex}".rstrip("/")
@@ -191,8 +194,10 @@ def enforce_workspace_for_non_superuser(request, explicit_workspace: Workspace |
     req_ws = get_workspace_for_request(request)
     if req_ws is None:
         raise ValidationError(
-            {"workspace": "No se pudo determinar el owner de esta petición (Host u Origin)."}
+            {"workspace":
+                "No se pudo determinar el owner de esta petición (Host u Origin)."}
         )
     if explicit_workspace is not None and explicit_workspace.id != req_ws.id:
-        raise ValidationError({"workspace": "No puedes crear o asignar recursos de otro owner."})
+        raise ValidationError(
+            {"workspace": "No puedes crear o asignar recursos de otro owner."})
     return req_ws

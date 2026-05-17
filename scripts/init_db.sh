@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-#
-# Crea usuario y base Postgres para Sambil leyendo backend/.env
-# Ejecutar como root o como usuario postgres en el servidor, después de setup.sh.
-# Uso: desde backend/: ./scripts/init_db.sh
-#
 
 set -e
 

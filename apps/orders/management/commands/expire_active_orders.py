@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from apps.orders.jobs import run_expire_active_orders_job
+from apps.orders.utils.jobs import run_expire_active_orders_job
 
 
 class Command(BaseCommand):

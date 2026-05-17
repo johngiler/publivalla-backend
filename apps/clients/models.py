@@ -1,6 +1,7 @@
 from django.db import models
 
 from apps.common.models import TimeStampedActiveModel
+from apps.common.utils.media_layout import client_cover_upload
 
 
 class ClientStatus(models.TextChoices):
@@ -49,9 +50,10 @@ class Client(TimeStampedActiveModel):
         default=ClientStatus.ACTIVE,
     )
     cover_image = models.ImageField(
-        upload_to="covers/clients/%Y/%m/",
+        upload_to=client_cover_upload,
         blank=True,
         null=True,
+        help_text="Portada de empresa: media/<slug>/clients/covers/AÑO/MES/ (histórico: covers/clients/…).",
     )
 
     class Meta:

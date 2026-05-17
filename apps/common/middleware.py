@@ -1,4 +1,4 @@
-"""CORP y marco seguro en ``/media/`` cuando la petición llega a Django (Gunicorn). Si Nginx sirve ``alias`` a disco, replica cabeceras (ver ``scripts/nginx-api.*.conf``)."""
+"""CORP y marco seguro en ``/media/`` cuando la petición llega a Django (Gunicorn). Si Nginx sirve ``alias`` a disco, replica cabeceras (ver ``scripts/nginx/nginx-api.*.conf``)."""
 
 
 class MediaCrossOriginResourcePolicyMiddleware:

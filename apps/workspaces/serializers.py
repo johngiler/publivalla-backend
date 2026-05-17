@@ -83,6 +83,7 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
     No se expone en /api/workspace/current/ (anónimo).
     """
 
+    logo_png_artifacts_url = serializers.SerializerMethodField()
     transactional_email_password_set = serializers.SerializerMethodField()
     transactional_email_api_key_set = serializers.SerializerMethodField()
 
@@ -104,7 +105,11 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
             "transactional_email_api_key_set",
             "transactional_email_mailgun_domain",
             "transactional_email_mailgun_region",
+            "logo_png_artifacts_url",
         )
+
+    def get_logo_png_artifacts_url(self, obj):
+        return self._absolute_media(obj, "logo_png_artifacts")
 
     def get_transactional_email_password_set(self, obj):
         return bool((getattr(obj, "transactional_email_password", None) or "").strip())

@@ -15,7 +15,14 @@ class WorkspaceAdmin(admin.ModelAdmin):
             "Marca visual",
             {
                 "description": "Logotipo completo e isotipo: archivos distintos (el isotipo es solo el símbolo; el logo suele incluir nombre o claim).",
-                "fields": ("logo", "logo_mark", "favicon", "primary_color", "secondary_color"),
+                "fields": (
+                    "logo",
+                    "logo_mark",
+                    "logo_png_artifacts",
+                    "favicon",
+                    "primary_color",
+                    "secondary_color",
+                ),
             },
         ),
         (

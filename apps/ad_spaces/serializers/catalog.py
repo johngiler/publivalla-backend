@@ -1,0 +1,164 @@
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework import serializers
+
+from apps.ad_spaces.utils.availability_calendar import year_months_occupied
+from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
+from apps.ad_spaces.models import AdSpace
+from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
+from apps.malls.models import ShoppingCenterMountingProvider
+
+MOUNTING_PROVIDERS_PAGE_SIZE = 3
+
+
+class CatalogMountingProviderSerializer(serializers.ModelSerializer):
+    """Campos públicos del proveedor de montaje (catálogo / detalle de toma)."""
+
+    class Meta:
+        model = ShoppingCenterMountingProvider
+        fields = (
+            "id",
+            "company_name",
+            "contact_name",
+            "phone",
+            "email",
+            "rif",
+            "notes",
+        )
+
+
+class AdSpaceSerializer(serializers.ModelSerializer):
+    shopping_center_slug = serializers.CharField(
+        source="shopping_center.slug", read_only=True
+    )
+    shopping_center_name = serializers.CharField(
+        source="shopping_center.name", read_only=True
+    )
+    shopping_center_city = serializers.CharField(
+        source="shopping_center.city", read_only=True
+    )
+    catalog_public = serializers.SerializerMethodField(read_only=True)
+    availability_year = serializers.SerializerMethodField(read_only=True)
+    months_occupied = serializers.SerializerMethodField(read_only=True)
+    status_label = serializers.SerializerMethodField()
+    cover_image = serializers.SerializerMethodField()
+    gallery_images = serializers.SerializerMethodField()
+    mounting_providers = serializers.SerializerMethodField(read_only=True)
+    municipal_permit_notice = serializers.CharField(
+        source="shopping_center.municipal_permit_notice",
+        read_only=True,
+    )
+    advertising_regulations = serializers.CharField(
+        source="shopping_center.advertising_regulations",
+        read_only=True,
+    )
+
+    class Meta:
+        model = AdSpace
+        fields = (
+            "id",
+            "code",
+            "shopping_center",
+            "shopping_center_slug",
+            "shopping_center_name",
+            "shopping_center_city",
+            "catalog_public",
+            "availability_year",
+            "months_occupied",
+            "type",
+            "title",
+            "description",
+            "width",
+            "height",
+            "quantity",
+            "material",
+            "location_description",
+            "level",
+            "monthly_price_usd",
+            "status",
+            "status_label",
+            "cover_image",
+            "gallery_images",
+            "venue_zone",
+            "double_sided",
+            "production_specs",
+            "installation_notes",
+            "hem_pocket_top_cm",
+            "mounting_providers",
+            "municipal_permit_notice",
+            "advertising_regulations",
+        )
+        read_only_fields = ("status",)
+
+    def get_catalog_public(self, obj):
+        return shopping_center_allows_public_catalog(obj.shopping_center)
+
+    def get_availability_year(self, obj):
+        return timezone.now().date().year
+
+    def get_months_occupied(self, obj):
+        y = self.get_availability_year(obj)
+        return year_months_occupied(obj.pk, y)
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_mounting_providers(self, obj):
+        sc = obj.shopping_center
+        rows: list[ShoppingCenterMountingProvider]
+        cache = getattr(sc, "_prefetched_objects_cache", None)
+        if cache is not None and "mounting_providers" in cache:
+            rows = [p for p in cache["mounting_providers"] if p.is_active]
+            rows.sort(key=lambda p: (p.sort_order, p.id))
+        else:
+            rows = list(
+                sc.mounting_providers.filter(is_active=True).order_by("sort_order", "id")
+            )
+        total = len(rows)
+        page_rows = rows[:MOUNTING_PROVIDERS_PAGE_SIZE]
+        data = CatalogMountingProviderSerializer(
+            page_rows, many=True, context=self.context
+        ).data
+        request = self.context.get("request")
+        next_url = None
+        if total > MOUNTING_PROVIDERS_PAGE_SIZE and request:
+            url_name = (
+                "catalog-space-mounting-providers"
+                if "/api/catalog/" in (request.path or "")
+                else "space-mounting-providers"
+            )
+            rel = (
+                reverse(url_name, kwargs={"pk": obj.pk})
+                + f"?page=2&page_size={MOUNTING_PROVIDERS_PAGE_SIZE}"
+            )
+            next_url = request.build_absolute_uri(rel)
+        return {
+            "count": total,
+            "next": next_url,
+            "previous": None,
+            "results": data,
+        }
+
+    def _absolute_media_url(self, url: str) -> str:
+        if not url:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+    def get_cover_image(self, obj):
+        u = ad_space_effective_cover_url(obj)
+        if not u:
+            return None
+        return self._absolute_media_url(u)
+
+    def get_gallery_images(self, obj):
+        request = self.context.get("request")
+        out = []
+        for i in obj.gallery_images.all().order_by("sort_order", "id"):
+            if not i.image:
+                continue
+            u = i.image.url
+            out.append(request.build_absolute_uri(u) if request else u)
+        return out
