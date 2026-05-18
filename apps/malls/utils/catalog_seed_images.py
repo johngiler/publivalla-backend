@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-_RE_TOMA_CODE = re.compile(r"^-T(?P<num>\d{1,2})(?P<suf>[A-Z])?$", re.IGNORECASE)
 _MAP_FILENAMES = ("catalog-images-map.json", "images-map.json")
 
 
