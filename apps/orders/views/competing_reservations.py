@@ -10,7 +10,6 @@ from rest_framework.views import APIView
 from apps.orders.utils.competing_reservations import (
     award_competing_submission,
     list_competing_submission_groups,
-    workspace_competing_reservations_enabled,
 )
 from apps.users.utils import user_is_admin
 from apps.workspaces.tenant import get_workspace_for_request
@@ -26,12 +25,7 @@ class AdminCompetingReservationsListView(APIView):
         if ws is None:
             return Response({"detail": "Workspace no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
         groups = list_competing_submission_groups(ws)
-        return Response(
-            {
-                "marketplace_bidding_enabled": workspace_competing_reservations_enabled(ws),
-                "groups": groups,
-            }
-        )
+        return Response({"groups": groups})
 
 
 class AdminCompetingReservationAwardView(APIView):

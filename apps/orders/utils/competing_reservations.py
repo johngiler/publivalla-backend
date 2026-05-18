@@ -27,7 +27,8 @@ NOTE_COMPETING_WON = "Solicitud adjudicada entre varias enviadas para la misma t
 
 
 def workspace_competing_reservations_enabled(workspace: Workspace | None) -> bool:
-    return bool(workspace and getattr(workspace, "marketplace_bidding_enabled", False))
+    """Pujas (varias solicitudes enviadas por toma) forman parte del flujo estándar."""
+    return workspace is not None
 
 
 def pipeline_statuses_blocking_marketplace(workspace: Workspace | None) -> tuple[str, ...]:
@@ -111,9 +112,6 @@ def _orders_for_space_submitted(ad_space_id: int, workspace: Workspace) -> list[
 
 def list_competing_submission_groups(workspace: Workspace) -> list[dict]:
     """Tomas con dos o más pedidos en estado «enviada»."""
-    if not workspace_competing_reservations_enabled(workspace):
-        return []
-
     rows = (
         OrderItem.objects.filter(
             order__status=OrderStatus.SUBMITTED,
@@ -177,9 +175,6 @@ def award_competing_submission(
     winner_order_id: int,
     actor: AbstractBaseUser | None,
 ) -> dict:
-    if not workspace_competing_reservations_enabled(workspace):
-        raise ValueError("Las pujas no están activas en este workspace.")
-
     orders = _orders_for_space_submitted(ad_space_id, workspace)
     if len(orders) < 2:
         raise ValueError("No hay varias solicitudes enviadas para esta toma.")

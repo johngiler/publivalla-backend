@@ -14,7 +14,6 @@ from apps.ad_spaces.utils.availability_calendar import (
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
-from apps.orders.utils.competing_reservations import workspace_competing_reservations_enabled
 from apps.providers.models import MountingProvider
 from apps.providers.serializers import CatalogMountingProviderSerializer
 
@@ -55,8 +54,6 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         source="shopping_center.rental_billing_unit",
         read_only=True,
     )
-    marketplace_bidding_enabled = serializers.SerializerMethodField(read_only=True)
-
     class Meta:
         model = AdSpace
         fields = (
@@ -97,12 +94,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "high_season_months",
             "high_season_multiplier",
             "rental_billing_unit",
-            "marketplace_bidding_enabled",
         )
         read_only_fields = ("status",)
-
-    def get_marketplace_bidding_enabled(self, obj):
-        return workspace_competing_reservations_enabled(obj.shopping_center.workspace)
 
     def get_catalog_public(self, obj):
         return shopping_center_allows_public_catalog(obj.shopping_center)
