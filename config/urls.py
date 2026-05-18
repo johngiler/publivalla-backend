@@ -20,7 +20,6 @@ from apps.clients.views import (
 )
 from apps.malls.views import ShoppingCenterAdminViewSet, ShoppingCenterViewSet
 from apps.availability.views import AvailabilityBlockAdminViewSet
-from apps.bidding.views import PlaceAuctionBidView, SpaceAuctionAdminViewSet
 from apps.providers.views import MountingProviderAdminViewSet
 from apps.orders.views import (
     AdminMarketplaceContractsView,
@@ -29,6 +28,10 @@ from apps.orders.views import (
     GuestCheckoutEmailCheckView,
     GuestCheckoutView,
     OrderViewSet,
+)
+from apps.orders.views.competing_reservations import (
+    AdminCompetingReservationAwardView,
+    AdminCompetingReservationsListView,
 )
 from apps.users.views import (
     ActivateClientAccountView,
@@ -67,7 +70,6 @@ router.register(
     AvailabilityBlockAdminViewSet,
     basename="admin-availability-block",
 )
-router.register(r"admin/auctions", SpaceAuctionAdminViewSet, basename="admin-auction")
 router.register(r"admin/users", UserAdminViewSet, basename="admin-user")
 
 catalog_router = DefaultRouter()
@@ -93,9 +95,14 @@ urlpatterns = [
     ),
     path("api/checkout/guest/", GuestCheckoutView.as_view(), name="guest-checkout"),
     path(
-        "api/auctions/<int:auction_id>/bids/",
-        PlaceAuctionBidView.as_view(),
-        name="auction-place-bid",
+        "api/admin/competing-reservations/",
+        AdminCompetingReservationsListView.as_view(),
+        name="admin-competing-reservations",
+    ),
+    path(
+        "api/admin/competing-reservations/<int:ad_space_id>/award/",
+        AdminCompetingReservationAwardView.as_view(),
+        name="admin-competing-reservation-award",
     ),
     path("api/auth/activate-client/", ActivateClientAccountView.as_view(), name="activate-client"),
     path("api/auth/validate-password/", ValidatePasswordView.as_view(), name="validate-password"),

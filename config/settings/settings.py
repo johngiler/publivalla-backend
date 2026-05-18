@@ -43,9 +43,9 @@ INSTALLED_APPS = [
     "apps.providers.apps.ProvidersConfig",
     "apps.ad_spaces.apps.AdSpacesConfig",
     "apps.availability.apps.AvailabilityConfig",
+    "apps.bidding.apps.BiddingConfig",  # solo migraciones (modelos retirados)
     "apps.clients.apps.ClientsConfig",
     "apps.orders.apps.OrdersConfig",
-    "apps.bidding.apps.BiddingConfig",
 ]
 
 MIDDLEWARE = [

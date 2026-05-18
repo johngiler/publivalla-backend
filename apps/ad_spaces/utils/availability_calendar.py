@@ -8,8 +8,10 @@ from datetime import date
 from django.conf import settings
 
 from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
+from apps.ad_spaces.models import AdSpace
 from apps.orders.models import OrderItem
-from apps.orders.utils.validators import PIPELINE_STATUSES, date_ranges_overlap
+from apps.orders.utils.competing_reservations import pipeline_statuses_blocking_marketplace
+from apps.orders.utils.validators import date_ranges_overlap
 
 DEFAULT_CALENDAR_YEARS = 3
 
@@ -28,9 +30,16 @@ def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
     (segmento «ocupado» en UI).
     """
     flags = [False] * 12
+    ad = (
+        AdSpace.objects.filter(pk=ad_space_id)
+        .select_related("shopping_center__workspace")
+        .first()
+    )
+    workspace = ad.shopping_center.workspace if ad else None
+    statuses = pipeline_statuses_blocking_marketplace(workspace)
     items = OrderItem.objects.filter(
         ad_space_id=ad_space_id,
-        order__status__in=PIPELINE_STATUSES,
+        order__status__in=statuses,
     ).values_list("start_date", "end_date")
     blocks = AvailabilityBlock.objects.filter(
         ad_space_id=ad_space_id,

@@ -81,11 +81,22 @@ def release_reserved_ad_spaces_for_order(order: Order) -> list[int]:
     return released
 
 
+def _workspace_for_order(order: Order):
+    item = order.items.select_related("ad_space__shopping_center__workspace").first()
+    if item is None:
+        return None
+    return item.ad_space.shopping_center.workspace
+
+
 @transaction.atomic
 def apply_hold_on_order_submit(order: Order) -> None:
+    from apps.orders.utils.competing_reservations import workspace_competing_reservations_enabled
+
     order.hold_expires_at = hold_expires_at_from_now(HOLD_DURATION_HOURS)
     order.save(update_fields=["hold_expires_at", "updated_at"])
-    reserve_ad_spaces_for_order(order)
+    ws = _workspace_for_order(order)
+    if not workspace_competing_reservations_enabled(ws):
+        reserve_ad_spaces_for_order(order)
 
 
 @transaction.atomic

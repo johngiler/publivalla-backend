@@ -160,7 +160,10 @@ class Workspace(TimeStampedActiveModel):
     marketplace_bidding_enabled = models.BooleanField(
         "Pujas en marketplace",
         default=False,
-        help_text="Si está activo, el operador puede publicar pujas por toma y los clientes pueden ofertar.",
+        help_text=(
+            "Si está activo, varios clientes pueden enviar solicitudes (estado enviada) "
+            "para la misma toma; el equipo elige cuál adjudicar en el panel Pujas."
+        ),
     )
     # Correo transaccional (notificaciones de pedidos): remitente SMTP del owner, distinto del correo personal.
     transactional_email_host = models.CharField(

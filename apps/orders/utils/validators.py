@@ -71,30 +71,14 @@ def order_item_conflicts(
     exclude_order_id: int | None = None,
 ) -> bool:
     """True si ya hay una orden en pipeline u otro bloqueo que choque con [start, end]."""
-    q_items = OrderItem.objects.filter(ad_space_id=ad_space_id).filter(
-        order__status__in=PIPELINE_STATUSES
+    from apps.orders.utils.competing_reservations import order_item_conflicts_with_workspace
+
+    return order_item_conflicts_with_workspace(
+        ad_space_id,
+        start,
+        end,
+        exclude_order_id=exclude_order_id,
     )
-    if exclude_order_id is not None:
-        q_items = q_items.exclude(order_id=exclude_order_id)
-
-    for row in q_items.iterator():
-        if date_ranges_overlap(start, end, row.start_date, row.end_date):
-            return True
-
-    blocks = AvailabilityBlock.objects.filter(
-        ad_space_id=ad_space_id,
-        is_active=True,
-        type__in=(
-            AvailabilityBlockType.OCCUPIED,
-            AvailabilityBlockType.BLOCKED,
-            AvailabilityBlockType.RESERVED,
-        ),
-    )
-    for b in blocks.iterator():
-        if date_ranges_overlap(start, end, b.start_date, b.end_date):
-            return True
-
-    return False
 
 
 def line_subtotal(monthly_price: Decimal, start: date, end: date) -> Decimal:

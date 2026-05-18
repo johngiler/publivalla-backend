@@ -14,8 +14,7 @@ from apps.ad_spaces.utils.availability_calendar import (
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
-from apps.bidding.serializers import CatalogActiveAuctionSerializer
-from apps.bidding.utils.queries import get_open_auction_for_space, workspace_bidding_enabled
+from apps.orders.utils.competing_reservations import workspace_competing_reservations_enabled
 from apps.providers.models import MountingProvider
 from apps.providers.serializers import CatalogMountingProviderSerializer
 
@@ -56,7 +55,6 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         source="shopping_center.rental_billing_unit",
         read_only=True,
     )
-    active_auction = serializers.SerializerMethodField(read_only=True)
     marketplace_bidding_enabled = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -99,22 +97,12 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "high_season_months",
             "high_season_multiplier",
             "rental_billing_unit",
-            "active_auction",
             "marketplace_bidding_enabled",
         )
         read_only_fields = ("status",)
 
     def get_marketplace_bidding_enabled(self, obj):
-        ws = obj.shopping_center.workspace
-        return workspace_bidding_enabled(ws)
-
-    def get_active_auction(self, obj):
-        if not workspace_bidding_enabled(obj.shopping_center.workspace):
-            return None
-        auction = get_open_auction_for_space(obj.pk)
-        if auction is None:
-            return None
-        return CatalogActiveAuctionSerializer(auction, context=self.context).data
+        return workspace_competing_reservations_enabled(obj.shopping_center.workspace)
 
     def get_catalog_public(self, obj):
         return shopping_center_allows_public_catalog(obj.shopping_center)
