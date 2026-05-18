@@ -50,7 +50,11 @@ def _filename_patterns_for_space_code(code: str) -> list[re.Pattern[str]]:
     n = m.group("n")
     suf = (m.group("suf") or "").upper()
     if suf:
-        return [re.compile(rf"^TOMA\s*{n}{suf}(?:[\s\._\(]|$)", re.IGNORECASE)]
+        # PDF Sambil: varias líneas por «TOMA n» (A/B) pero fotos nombradas «TOMA n …» sin letra.
+        return [
+            re.compile(rf"^TOMA\s*{n}{suf}(?:[\s\._\(]|$)", re.IGNORECASE),
+            re.compile(rf"^TOMA\s*{n}(?![0-9A-Z])(?:[\s\._\(]|$)", re.IGNORECASE),
+        ]
     return [
         re.compile(rf"^TOMA\s*{n}(?![0-9A-Z])(?:[\s\._\(]|$)", re.IGNORECASE),
     ]

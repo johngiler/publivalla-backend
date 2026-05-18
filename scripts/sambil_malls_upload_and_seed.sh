@@ -31,6 +31,7 @@ MALL_ROWS=(
   "sbr|Sambil Barquisimeto|Sambil Barquisimeto.pdf"
   "ssn|Sambil San Cristóbal|Sambil San Cristobal.pdf"
   "sli|Centro Lido|Centro Lido.pdf"
+  "spa|Sambil Paraguaná|TOMAS SAMBIL PARAGUANA.pdf"
 )
 
 SSH_OPTS=(
@@ -272,6 +273,7 @@ EOF
     sbr) label="Barquisimeto (slug sbr)" ;;
     ssn) label="San Cristóbal (slug ssn)" ;;
     sli) label="Centro Lido (slug sli)" ;;
+    spa) label="Paraguaná (slug spa)" ;;
   esac
 
   echo "# --- ${n}) ${label} ---"
