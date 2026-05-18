@@ -69,19 +69,22 @@ class MountingProviderSerializer(serializers.ModelSerializer):
         }
 
     def get_shopping_center_name(self, obj):
-        first = self._ordered_centers(obj).first()
-        return first.name if first else None
+        centers = self._ordered_centers(obj)
+        return centers[0].name if centers else None
 
     def get_shopping_center_names(self, obj):
         return [c.name for c in self._ordered_centers(obj)]
 
-    def _ordered_centers(self, obj):
+    def _ordered_centers(self, obj) -> list[ShoppingCenter]:
         cache = getattr(obj, "_prefetched_objects_cache", None)
         if cache is not None and "shopping_centers" in cache:
             centers = list(cache["shopping_centers"])
-            centers.sort(key=lambda c: (c.listing_order, c.slug, c.id))
-            return centers
-        return obj.shopping_centers.order_by("listing_order", "slug", "id")
+        else:
+            centers = list(
+                obj.shopping_centers.order_by("listing_order", "slug", "id")
+            )
+        centers.sort(key=lambda c: (c.listing_order, c.slug, c.id))
+        return centers
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
