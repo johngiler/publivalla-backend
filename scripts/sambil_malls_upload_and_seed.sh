@@ -30,6 +30,7 @@ MALL_ROWS=(
   "smg|Sambil Margarita|sambil Margarita.pdf"
   "sbr|Sambil Barquisimeto|Sambil Barquisimeto.pdf"
   "ssn|Sambil San Cristóbal|Sambil San Cristobal.pdf"
+  "sli|Centro Lido|Centro Lido.pdf"
 )
 
 SSH_OPTS=(
@@ -149,11 +150,6 @@ upload_one_mall() {
   local staging=""
   staging="$(mktemp -d "${TMPDIR:-/tmp}/sambil-upload.XXXXXX")"
 
-  if [[ ! -d "${src_dir}" ]]; then
-    rm -rf "${staging}"
-    echo "OMITIDO (sin carpeta): ${src_dir}" >&2
-    return 0
-  fi
   if [[ ! -f "${src_pdf}" ]]; then
     echo "OMITIDO (sin PDF): ${src_pdf}" >&2
     rm -rf "${staging}"
@@ -166,8 +162,13 @@ upload_one_mall() {
   echo "→ [${slug}] preparar remoto"
   ssh_cmd "mkdir -p '${remote_images}' && chown -R git:git '${remote_base}'"
 
-  echo "→ [${slug}] imágenes: ${local_dir}"
-  tar_upload_images "${src_dir}" "${remote_images}" "${staging}/images.tar.gz" "${slug}"
+  if [[ -d "${src_dir}" ]]; then
+    echo "→ [${slug}] imágenes: ${local_dir}"
+    tar_upload_images "${src_dir}" "${remote_images}" "${staging}/images.tar.gz" "${slug}"
+  else
+    echo "AVISO [${slug}]: sin carpeta de imágenes (${src_dir}); se sube solo catalog.pdf." >&2
+    ssh_cmd "mkdir -p '${remote_images}' && chown -R git:git '${remote_base}'"
+  fi
 
   echo "→ [${slug}] PDF → catalog.pdf"
   rsync_retry "${staging}/catalog.pdf" "$(remote_target "${remote_base}/catalog.pdf")"
@@ -228,7 +229,7 @@ upload_missing() {
 upload_one() {
   local slug="${1:-}"
   if [[ -z "${slug}" ]]; then
-    echo "Uso: $0 upload-one <slug>   (scr sla svl smr smg sbr ssn)" >&2
+    echo "Uso: $0 upload-one <slug>   (scr sla svl smr smg sbr ssn sli)" >&2
     exit 1
   fi
   for row in "${MALL_ROWS[@]}"; do
@@ -270,6 +271,7 @@ EOF
     smg) label="Margarita (slug smg)" ;;
     sbr) label="Barquisimeto (slug sbr)" ;;
     ssn) label="San Cristóbal (slug ssn)" ;;
+    sli) label="Centro Lido (slug sli)" ;;
   esac
 
   echo "# --- ${n}) ${label} ---"

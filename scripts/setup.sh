@@ -20,6 +20,7 @@ echo "[setup] Ensuring user git and directory..."
 id git 2>/dev/null || useradd -m -s /bin/bash git
 mkdir -p /home/git/backend /home/git/backend/media
 mkdir -p /home/git/backend /home/git/backend/data
+mkdir -p /home/git/backend/logs
 chown -R git:git /home/git
 chmod 755 /home/git /home/git/backend
 chown git:www-data /home/git/backend/media
