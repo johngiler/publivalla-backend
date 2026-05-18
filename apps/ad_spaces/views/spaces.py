@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.ad_spaces.models import AdSpace, AdSpaceStatus
+from apps.ad_spaces.models import AdSpace, AdSpaceStatus, AdSpaceType
 from apps.ad_spaces.serializers import (
     AdSpaceSerializer,
     CatalogMountingProviderSerializer,
@@ -51,26 +51,33 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             | Q(shopping_center__district__icontains=search)
         )
 
-    def get_queryset(self):
-        qs = AdSpace.objects.select_related("shopping_center").filter(
+    def _catalog_base_qs(self, request):
+        """Tomas publicables del tenant con filtros de listado/facets (sin prefetch)."""
+        qs = AdSpace.objects.filter(
             shopping_center__marketplace_catalog_enabled=True,
             shopping_center__is_active=True,
             is_active=True,
         )
-        ws = get_workspace_for_request(self.request)
+        ws = get_workspace_for_request(request)
         if ws is not None:
             qs = qs.filter(shopping_center__workspace=ws)
-        center = self.request.query_params.get("center")
+        center = (request.query_params.get("center") or "").strip()
         if center:
-            qs = qs.filter(shopping_center__slug__iexact=center.strip())
-        if self.action == "list":
-            search = self.request.query_params.get("search", "").strip()
-            qs = self._apply_list_search(qs, search)
-            city = self.request.query_params.get("city", "").strip()
-            if city == _EMPTY_CITY_SENTINEL:
-                qs = qs.filter(shopping_center__city="")
-            elif city:
-                qs = qs.filter(shopping_center__city__iexact=city)
+            qs = qs.filter(shopping_center__slug__iexact=center)
+        search = (request.query_params.get("search") or "").strip()
+        qs = self._apply_list_search(qs, search)
+        city = (request.query_params.get("city") or "").strip()
+        if city == _EMPTY_CITY_SENTINEL:
+            qs = qs.filter(shopping_center__city="")
+        elif city:
+            qs = qs.filter(shopping_center__city__iexact=city)
+        space_type = (request.query_params.get("type") or "").strip()
+        if space_type:
+            qs = qs.filter(type=space_type)
+        return qs
+
+    def get_queryset(self):
+        qs = self._catalog_base_qs(self.request).select_related("shopping_center")
         return qs.prefetch_related(
             "gallery_images",
             Prefetch(
@@ -156,19 +163,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Conteos por ciudad del centro (para pills en portada). Respeta tenant y búsqueda de listado.
         """
-        qs = AdSpace.objects.select_related("shopping_center").filter(
-            shopping_center__marketplace_catalog_enabled=True,
-            shopping_center__is_active=True,
-            is_active=True,
-        )
-        ws = get_workspace_for_request(request)
-        if ws is not None:
-            qs = qs.filter(shopping_center__workspace=ws)
-        center = request.query_params.get("center")
-        if center:
-            qs = qs.filter(shopping_center__slug__iexact=center.strip())
-        search = request.query_params.get("search", "").strip()
-        qs = self._apply_list_search(qs, search)
+        qs = self._catalog_base_qs(request)
         total = qs.count()
         rows = (
             qs.exclude(shopping_center__city="")
@@ -192,21 +187,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         Conteos por centro comercial (slug + nombre) para pills en portada.
         Respeta tenant, búsqueda de listado y filtro opcional por ciudad.
         """
-        qs = AdSpace.objects.select_related("shopping_center").filter(
-            shopping_center__marketplace_catalog_enabled=True,
-            shopping_center__is_active=True,
-            is_active=True,
-        )
-        ws = get_workspace_for_request(request)
-        if ws is not None:
-            qs = qs.filter(shopping_center__workspace=ws)
-        search = request.query_params.get("search", "").strip()
-        qs = self._apply_list_search(qs, search)
-        city = request.query_params.get("city", "").strip()
-        if city == _EMPTY_CITY_SENTINEL:
-            qs = qs.filter(shopping_center__city="")
-        elif city:
-            qs = qs.filter(shopping_center__city__iexact=city)
+        qs = self._catalog_base_qs(request)
         total = qs.count()
         rows = (
             qs.values("shopping_center__slug", "shopping_center__name")
@@ -221,5 +202,27 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             }
             for r in rows
             if (r.get("shopping_center__slug") or "").strip()
+        ]
+        return Response({"total": total, "items": items})
+
+    @action(detail=False, methods=["get"], url_path="type-facets")
+    def type_facets(self, request):
+        """Conteos por tipo de toma (formato publicitario) para filtros en portada."""
+        qs = self._catalog_base_qs(request)
+        total = qs.count()
+        labels = dict(AdSpaceType.choices)
+        rows = (
+            qs.values("type")
+            .annotate(count=Count("id"))
+            .order_by("-count", "type")
+        )
+        items = [
+            {
+                "type": r["type"],
+                "label": labels.get(r["type"], r["type"]),
+                "count": r["count"],
+            }
+            for r in rows
+            if r.get("type")
         ]
         return Response({"total": total, "items": items})

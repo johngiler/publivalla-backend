@@ -26,6 +26,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     availability_year = serializers.SerializerMethodField(read_only=True)
     months_occupied = serializers.SerializerMethodField(read_only=True)
     status_label = serializers.SerializerMethodField()
+    type_label = serializers.CharField(source="get_type_display", read_only=True)
     cover_image = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField()
     mounting_providers = serializers.SerializerMethodField(read_only=True)
@@ -51,6 +52,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "availability_year",
             "months_occupied",
             "type",
+            "type_label",
             "title",
             "description",
             "width",
