@@ -10,11 +10,14 @@ from django.db.models import Max
 from django.utils import timezone
 
 from apps.orders.models import Order, OrderStatus, OrderStatusEvent
+from apps.orders.services.order_hold_services import (
+    NOTE_HOLD_ON_SUBMIT,
+    apply_hold_on_order_submit,
+)
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
     contract_meets_min_months,
-    hold_expires_at_from_now,
     line_subtotal,
     order_item_conflicts,
     rental_start_allowed_for_marketplace,
@@ -135,22 +138,21 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
     order.total_amount = total.quantize(Decimal("0.01"))
     order.status = OrderStatus.SUBMITTED
     order.submitted_at = timezone.now()
-    order.hold_expires_at = hold_expires_at_from_now(72)
     order.save(
         update_fields=[
             "total_amount",
             "status",
             "submitted_at",
-            "hold_expires_at",
         ]
     )
+    apply_hold_on_order_submit(order)
 
     log_order_status_transition(
         order,
         OrderStatus.DRAFT,
         OrderStatus.SUBMITTED,
         actor=actor,
-        note="Solicitud enviada por el cliente.",
+        note=NOTE_HOLD_ON_SUBMIT,
     )
     order.refresh_from_db()
     return order

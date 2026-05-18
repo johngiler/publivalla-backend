@@ -428,15 +428,23 @@ def try_send_order_status_emails(
         )
         return
 
-    try:
-        to_label = OrderStatus(to_status).label
-    except ValueError:
-        to_label = to_status
+    from apps.orders.services.order_hold_services import order_display_status_label
 
-    try:
-        from_label = OrderStatus(from_status).label if from_status else ""
-    except ValueError:
-        from_label = from_status or ""
+    if str(to_status) == str(order.status):
+        to_label = order_display_status_label(order)
+    else:
+        try:
+            to_label = OrderStatus(to_status).label
+        except ValueError:
+            to_label = to_status
+
+    if from_status == OrderStatus.SUBMITTED:
+        from_label = "Reservado"
+    else:
+        try:
+            from_label = OrderStatus(from_status).label if from_status else ""
+        except ValueError:
+            from_label = from_status or ""
 
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
     accent = (getattr(ws, "primary_color", None) or "").strip() or None

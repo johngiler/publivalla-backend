@@ -19,6 +19,7 @@ from apps.clients.views import (
     MyFavoritesView,
 )
 from apps.malls.views import ShoppingCenterAdminViewSet, ShoppingCenterViewSet
+from apps.availability.views import AvailabilityBlockAdminViewSet
 from apps.providers.views import MountingProviderAdminViewSet
 from apps.orders.views import (
     AdminMarketplaceContractsView,
@@ -60,6 +61,11 @@ router.register(
     basename="admin-mounting-provider",
 )
 router.register(r"admin/spaces", AdSpaceAdminViewSet, basename="admin-space")
+router.register(
+    r"admin/availability-blocks",
+    AvailabilityBlockAdminViewSet,
+    basename="admin-availability-block",
+)
 router.register(r"admin/users", UserAdminViewSet, basename="admin-user")
 
 catalog_router = DefaultRouter()

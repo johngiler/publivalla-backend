@@ -230,6 +230,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source="status_events", many=True, read_only=True
     )
     status_label = serializers.SerializerMethodField()
+    hold_active = serializers.SerializerMethodField()
     code = serializers.CharField(read_only=True)
     payment_method_label = serializers.SerializerMethodField()
     payment_receipt_url = serializers.SerializerMethodField()
@@ -257,6 +258,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "client_detail",
             "status",
             "status_label",
+            "hold_active",
             "total_amount",
             "submitted_at",
             "hold_expires_at",
@@ -281,6 +283,7 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "status",
             "status_label",
+            "hold_active",
             "total_amount",
             "submitted_at",
             "hold_expires_at",
@@ -302,7 +305,14 @@ class OrderSerializer(serializers.ModelSerializer):
         )
 
     def get_status_label(self, obj):
-        return _status_label(obj.status)
+        from apps.orders.services.order_hold_services import order_display_status_label
+
+        return order_display_status_label(obj)
+
+    def get_hold_active(self, obj):
+        from apps.orders.services.order_hold_services import order_hold_is_active
+
+        return order_hold_is_active(obj)
 
     def get_payment_method_label(self, obj):
         v = obj.payment_method or ""
@@ -534,7 +544,21 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
         if prev != instance.status:
             request = self.context.get("request")
             actor = request.user if request and request.user.is_authenticated else None
+            cancel_note = ""
+            if instance.status == OrderStatus.CANCELLED:
+                from apps.orders.services.order_hold_services import NOTE_CANCELLED_BY_TEAM
+
+                cancel_note = NOTE_CANCELLED_BY_TEAM
             log_order_status_transition(
+                instance,
+                prev,
+                instance.status,
+                actor=actor,
+                note=cancel_note,
+            )
+            from apps.orders.services.order_hold_services import on_order_status_changed
+
+            on_order_status_changed(
                 instance,
                 prev,
                 instance.status,

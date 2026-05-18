@@ -4,9 +4,9 @@ from apps.common.models import TimeStampedActiveModel
 
 
 class AvailabilityBlockType(models.TextChoices):
-    RESERVED = "reserved", "Reserved"
-    OCCUPIED = "occupied", "Occupied"
-    BLOCKED = "blocked", "Blocked"
+    RESERVED = "reserved", "Reservado"
+    OCCUPIED = "occupied", "Ocupado"
+    BLOCKED = "blocked", "Bloqueado"
 
 
 class AvailabilityBlock(TimeStampedActiveModel):
@@ -18,9 +18,15 @@ class AvailabilityBlock(TimeStampedActiveModel):
     start_date = models.DateField()
     end_date = models.DateField()
     type = models.CharField(max_length=20, choices=AvailabilityBlockType.choices)
+    note = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Motivo interno (solo panel admin).",
+    )
 
     class Meta:
-        ordering = ["start_date"]
+        ordering = ["-start_date", "-id"]
 
     def __str__(self):
         return f"{self.ad_space_id} {self.start_date}–{self.end_date}"
