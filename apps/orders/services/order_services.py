@@ -128,9 +128,16 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
             )
 
     total = Decimal("0")
-    for item in order.items.select_related("ad_space"):
+    from apps.malls.utils.high_season import line_subtotal_with_high_season
+
+    for item in order.items.select_related("ad_space", "ad_space__shopping_center"):
         monthly = item.ad_space.monthly_price_usd
-        sub = line_subtotal(monthly, item.start_date, item.end_date)
+        sub = line_subtotal_with_high_season(
+            monthly,
+            item.ad_space.shopping_center,
+            item.start_date,
+            item.end_date,
+        )
         item.monthly_price = monthly
         item.subtotal = sub
         item.save(update_fields=["monthly_price", "subtotal"])

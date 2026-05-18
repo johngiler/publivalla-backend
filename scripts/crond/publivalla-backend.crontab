@@ -1,29 +1,7 @@
 # Publivalla — tareas programadas del backend (producción)
-#
-# Instalación (usuario git en el servidor API):
-#   mkdir -p /home/git/backend/logs
-#   crontab -u git -e
-#   Pegar las líneas de «ACTIVAS» (sin los # del bloque de comentarios de cabecera si prefieres).
-#
-# Rutas:
-#   Código y venv: /home/git/backend
-#   Python:        /home/git/backend/.venv/bin/python
-#
-# Comandos NO incluidos (ejecución manual / deploy / una sola vez):
-#   ensure_default_workspace, init_db, migrate, seed_production_catalog,
-#   provider_demo_data, order_demo_data, convert_media_to_webp
-#
-# Celery (correos y tareas async): servicio systemd publivalla-celery, no cron.
-
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-
-# --- ACTIVAS (copiar desde aquí) ---
 
 # Holds de 72 h vencidos: cancela pedido «enviado» y libera tomas (cada hora, minuto 5)
 5 * * * * cd /home/git/backend && .venv/bin/python manage.py expire_order_holds >> /home/git/backend/logs/cron-expire-order-holds.log 2>&1
 
 # Órdenes «activa» con última línea pasada: pasar a «vencida» (diario 00:15)
 15 0 * * * cd /home/git/backend && .venv/bin/python manage.py expire_active_orders >> /home/git/backend/logs/cron-expire-active-orders.log 2>&1
-
-# --- Fin ACTIVAS ---

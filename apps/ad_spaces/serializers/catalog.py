@@ -2,7 +2,15 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.ad_spaces.utils.availability_calendar import year_months_occupied
+from apps.malls.utils.high_season import (
+    high_season_multiplier as center_high_season_multiplier,
+    normalize_high_season_months,
+)
+from apps.ad_spaces.utils.availability_calendar import (
+    availability_calendar_years,
+    months_occupied_by_year,
+    year_months_occupied,
+)
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
@@ -24,7 +32,9 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     )
     catalog_public = serializers.SerializerMethodField(read_only=True)
     availability_year = serializers.SerializerMethodField(read_only=True)
+    availability_calendar_years = serializers.SerializerMethodField(read_only=True)
     months_occupied = serializers.SerializerMethodField(read_only=True)
+    months_occupied_by_year = serializers.SerializerMethodField(read_only=True)
     status_label = serializers.SerializerMethodField()
     type_label = serializers.CharField(source="get_type_display", read_only=True)
     cover_image = serializers.SerializerMethodField()
@@ -38,6 +48,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         source="shopping_center.advertising_regulations",
         read_only=True,
     )
+    high_season_months = serializers.SerializerMethodField(read_only=True)
+    high_season_multiplier = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = AdSpace
@@ -50,7 +62,9 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "shopping_center_city",
             "catalog_public",
             "availability_year",
+            "availability_calendar_years",
             "months_occupied",
+            "months_occupied_by_year",
             "type",
             "type_label",
             "title",
@@ -74,6 +88,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "mounting_providers",
             "municipal_permit_notice",
             "advertising_regulations",
+            "high_season_months",
+            "high_season_multiplier",
         )
         read_only_fields = ("status",)
 
@@ -81,14 +97,28 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         return shopping_center_allows_public_catalog(obj.shopping_center)
 
     def get_availability_year(self, obj):
-        return timezone.now().date().year
+        years = availability_calendar_years()
+        return years[0] if years else timezone.now().date().year
+
+    def get_availability_calendar_years(self, obj):
+        return availability_calendar_years()
 
     def get_months_occupied(self, obj):
         y = self.get_availability_year(obj)
         return year_months_occupied(obj.pk, y)
 
+    def get_months_occupied_by_year(self, obj):
+        by = months_occupied_by_year(obj.pk)
+        return {str(y): flags for y, flags in by.items()}
+
     def get_status_label(self, obj):
         return obj.get_status_display()
+
+    def get_high_season_months(self, obj):
+        return normalize_high_season_months(obj.shopping_center.high_season_months)
+
+    def get_high_season_multiplier(self, obj):
+        return str(center_high_season_multiplier(obj.shopping_center))
 
     def get_mounting_providers(self, obj):
         sc = obj.shopping_center

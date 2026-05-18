@@ -13,7 +13,7 @@ from apps.ad_spaces.serializers import (
 from apps.providers.models import MountingProvider
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
-    contract_meets_min_months,
+    contract_months_inclusive,
     order_item_conflicts,
     rental_start_allowed_for_marketplace,
 )
@@ -22,9 +22,29 @@ from apps.workspaces.tenant import get_workspace_for_request
 _EMPTY_CITY_SENTINEL = "__empty__"
 
 
-class CheckRentalRangeSerializer(serializers.Serializer):
+class RentalSegmentCheckSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
+
+
+class CheckRentalRangeSerializer(serializers.Serializer):
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    rental_segments = RentalSegmentCheckSerializer(many=True, required=False)
+
+    def validate(self, attrs):
+        segments = attrs.get("rental_segments") or []
+        if segments:
+            attrs["_segments"] = segments
+            return attrs
+        start = attrs.get("start_date")
+        end = attrs.get("end_date")
+        if not start or not end:
+            raise serializers.ValidationError(
+                "Indica un rango (inicio y fin) o una lista rental_segments."
+            )
+        attrs["_segments"] = [{"start_date": start, "end_date": end}]
+        return attrs
 
 
 class CatalogMountingProvidersPagination(PageNumberPagination):
@@ -96,8 +116,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         space = self.get_object()
         ser = CheckRentalRangeSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        start = ser.validated_data["start_date"]
-        end = ser.validated_data["end_date"]
+        segments = ser.validated_data["_segments"]
         if space.status != AdSpaceStatus.AVAILABLE:
             return Response(
                 {
@@ -109,35 +128,61 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                 },
                 status=200,
             )
-        if not contract_meets_min_months(start, end):
-            m = MIN_RESERVATION_CALENDAR_MONTHS
+        title = (space.title or "").strip() or "esta toma"
+        total_months = 0
+        for seg in segments:
+            start = seg["start_date"]
+            end = seg["end_date"]
+            if end < start:
+                return Response(
+                    {
+                        "ok": False,
+                        "detail": "En cada tramo, la fecha fin debe ser posterior o igual al inicio.",
+                    },
+                    status=200,
+                )
+            total_months += contract_months_inclusive(start, end)
+            if not rental_start_allowed_for_marketplace(start):
+                return Response(
+                    {
+                        "ok": False,
+                        "detail": (
+                            "No puedes reservar desde un mes pasado ni desde el mes en curso. "
+                            "Elige un inicio a partir del próximo mes."
+                        ),
+                    },
+                    status=200,
+                )
+            if order_item_conflicts(space.pk, start, end):
+                return Response(
+                    {
+                        "ok": False,
+                        "detail": f'Las fechas elegidas para «{title}» chocan con otra reserva o bloqueo.',
+                    },
+                    status=200,
+                )
+        m = MIN_RESERVATION_CALENDAR_MONTHS
+        if total_months < m:
             return Response(
                 {
                     "ok": False,
                     "detail": (
-                        f"El período no cumple el mínimo de {m} "
-                        f"{'mes' if m == 1 else 'meses'} de calendario."
+                        f"Elige al menos {m} {'mes' if m == 1 else 'meses'} en total."
                     ),
                 },
                 status=200,
             )
-        if not rental_start_allowed_for_marketplace(start):
+        from apps.orders.utils.validators import order_request_items_have_internal_overlap
+
+        pseudo = [
+            {"ad_space": space, "start_date": s["start_date"], "end_date": s["end_date"]}
+            for s in segments
+        ]
+        if order_request_items_have_internal_overlap(pseudo):
             return Response(
                 {
                     "ok": False,
-                    "detail": (
-                        "No puedes reservar desde un mes pasado ni desde el mes en curso. "
-                        "Elige un inicio a partir del próximo mes."
-                    ),
-                },
-                status=200,
-            )
-        if order_item_conflicts(space.pk, start, end):
-            title = (space.title or "").strip() or "esta toma"
-            return Response(
-                {
-                    "ok": False,
-                    "detail": f'Las fechas elegidas para «{title}» chocan con otra reserva o bloqueo.',
+                    "detail": "Los tramos elegidos no pueden solaparse entre sí.",
                 },
                 status=200,
             )

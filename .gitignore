@@ -6,6 +6,7 @@ db.sqlite3
 .env.local
 .env.production
 config/settings/local_settings.py
+config/settings/local_settings.production.py
 *.log
 .DS_Store
 media/

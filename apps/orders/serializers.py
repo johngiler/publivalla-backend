@@ -831,9 +831,13 @@ class OrderItemWriteSerializer(serializers.Serializer):
                     )
                 }
             )
-        monthly = data["ad_space"].monthly_price_usd
+        monthly = ad.monthly_price_usd
+        from apps.malls.utils.high_season import line_subtotal_with_high_season
+
         data["_monthly_price"] = monthly
-        data["_subtotal"] = line_subtotal(monthly, start, end)
+        data["_subtotal"] = line_subtotal_with_high_season(
+            monthly, ad.shopping_center, start, end
+        )
         return data
 
 
@@ -848,6 +852,12 @@ class OrderCreateSerializer(serializers.Serializer):
     def validate_items(self, value):
         if not value:
             raise serializers.ValidationError("Agrega al menos una toma.")
+        from apps.orders.utils.validators import order_request_items_have_internal_overlap
+
+        if order_request_items_have_internal_overlap(value):
+            raise serializers.ValidationError(
+                "Las fechas de una misma toma no pueden solaparse en el pedido."
+            )
         return value
 
     def validate(self, data):

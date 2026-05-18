@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 
 from apps.common.utils.image_webp import ensure_imagefields_webp
@@ -82,6 +84,17 @@ class ShoppingCenter(TimeStampedActiveModel):
         blank=True,
         default="Caracas",
         help_text="Ciudad en el encabezado de fecha de la carta al municipio.",
+    )
+    high_season_months = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Meses de calendario (1–12) en temporada alta cada año, p. ej. [11, 12, 1].",
+    )
+    high_season_multiplier = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        help_text="Factor sobre el canon mensual en meses de temporada alta (1.25 = +25 %).",
     )
 
     class Meta:

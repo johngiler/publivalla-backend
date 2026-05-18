@@ -196,6 +196,12 @@ class GuestCheckoutSerializer(serializers.Serializer):
     def validate_items(self, value):
         if not value:
             raise serializers.ValidationError("Agrega al menos una toma.")
+        from apps.orders.utils.validators import order_request_items_have_internal_overlap
+
+        if order_request_items_have_internal_overlap(value):
+            raise serializers.ValidationError(
+                "Las fechas de una misma toma no pueden solaparse en el pedido."
+            )
         return value
 
     def validate_company_name(self, value):

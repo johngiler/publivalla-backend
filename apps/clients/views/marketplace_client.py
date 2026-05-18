@@ -12,7 +12,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.ad_spaces.utils.availability_calendar import year_months_occupied
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace, AdSpaceImage
 from apps.ad_spaces.serializers import AdSpaceSerializer
@@ -180,8 +179,6 @@ class MyFavoritesView(APIView):
             .order_by("-created_at", "-id")
         )
 
-        y0 = timezone.now().date().year
-        y1 = y0 + 1
         ctx = {"request": request}
         results = []
         favorite_space_ids = []
@@ -190,8 +187,6 @@ class MyFavoritesView(APIView):
             favorite_space_ids.append(ad.id)
             ser = AdSpaceSerializer(ad, context=ctx)
             row = dict(ser.data)
-            row["months_occupied_next_year"] = year_months_occupied(ad.pk, y1)
-            row["availability_year_next"] = y1
             results.append(
                 {
                     "id": fav.id,
@@ -244,13 +239,9 @@ class MyFavoritesView(APIView):
             )
 
         fav, created = ClientAdSpaceFavorite.objects.get_or_create(client=client, ad_space=ad)
-        y0 = timezone.now().date().year
-        y1 = y0 + 1
         ctx = {"request": request}
         ser = AdSpaceSerializer(ad, context=ctx)
         row = dict(ser.data)
-        row["months_occupied_next_year"] = year_months_occupied(ad.pk, y1)
-        row["availability_year_next"] = y1
         payload = {
             "id": fav.id,
             "created_at": fav.created_at.isoformat() if fav.created_at else None,

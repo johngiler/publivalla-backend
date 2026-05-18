@@ -49,6 +49,20 @@ def date_ranges_overlap(a_start: date, a_end: date, b_start: date, b_end: date) 
     return a_start <= b_end and b_start <= a_end
 
 
+def order_request_items_have_internal_overlap(items: list) -> bool:
+    """True si dos líneas del mismo pedido para la misma toma se solapan."""
+    by_space: dict[int, list[tuple[date, date]]] = {}
+    for row in items:
+        aid = row["ad_space"].id
+        by_space.setdefault(aid, []).append((row["start_date"], row["end_date"]))
+    for ranges in by_space.values():
+        for i, (a0, a1) in enumerate(ranges):
+            for b0, b1 in ranges[i + 1 :]:
+                if date_ranges_overlap(a0, a1, b0, b1):
+                    return True
+    return False
+
+
 def order_item_conflicts(
     ad_space_id: int,
     start: date,

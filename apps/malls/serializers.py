@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.malls.models import ShoppingCenter
+from apps.malls.utils.high_season import normalize_high_season_months
 from apps.providers.serializers import MountingProviderSerializer
 
 
@@ -37,6 +40,8 @@ class ShoppingCenterSerializer(serializers.ModelSerializer):
             "municipal_permit_notice",
             "advertising_regulations",
             "authorization_letter_city",
+            "high_season_months",
+            "high_season_multiplier",
             "mounting_providers",
             "tomas_count",
             "display_title",
@@ -52,6 +57,22 @@ class ShoppingCenterSerializer(serializers.ModelSerializer):
             "created_at": {"read_only": True},
             "updated_at": {"read_only": True},
         }
+
+    def validate_high_season_months(self, value):
+        return normalize_high_season_months(value)
+
+    def validate_high_season_multiplier(self, value):
+        if value is None:
+            return Decimal("1.00")
+        try:
+            m = Decimal(str(value))
+        except Exception:
+            raise serializers.ValidationError("Indica un factor numérico válido.")
+        if m < Decimal("1"):
+            raise serializers.ValidationError("El factor debe ser al menos 1.")
+        if m > Decimal("10"):
+            raise serializers.ValidationError("El factor no puede superar 10.")
+        return m.quantize(Decimal("0.01"))
 
     def get_display_title(self, obj):
         city = (obj.city or "").strip()

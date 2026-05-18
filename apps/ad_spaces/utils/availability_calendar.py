@@ -5,9 +5,21 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
+from django.conf import settings
+
 from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
 from apps.orders.models import OrderItem
 from apps.orders.utils.validators import PIPELINE_STATUSES, date_ranges_overlap
+
+DEFAULT_CALENDAR_YEARS = 3
+
+
+def availability_calendar_years(*, ref: date | None = None) -> list[int]:
+    """Años mostrados en catálogo: año de referencia + los siguientes (p. ej. 3 años)."""
+    y0 = (ref if ref is not None else date.today()).year
+    n = int(getattr(settings, "AVAILABILITY_CALENDAR_YEARS", DEFAULT_CALENDAR_YEARS))
+    n = max(1, min(n, 6))
+    return list(range(y0, y0 + n))
 
 
 def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
@@ -41,3 +53,12 @@ def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
                 break
 
     return flags
+
+
+def months_occupied_by_year(
+    ad_space_id: int,
+    *,
+    ref: date | None = None,
+) -> dict[int, list[bool]]:
+    """Mapa año → 12 banderas de mes ocupado/no disponible en catálogo."""
+    return {y: year_months_occupied(ad_space_id, y) for y in availability_calendar_years(ref=ref)}
