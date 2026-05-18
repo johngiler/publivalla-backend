@@ -220,12 +220,15 @@ def _apply_parsed_catalog(
     dry_run = bool(options.get("dry_run"))
     force = bool(options.get("force"))
     center_slug_override = (options.get("center_slug") or "").strip()
+    center_name_override = (options.get("center_name") or "").strip()
     code_prefix_override = (options.get("code_prefix") or "").strip().upper()
     images_raw = (options.get("images_dir") or "").strip()
     allow_missing_images = not bool(options.get("require_images"))
 
     if center_slug_override:
         parsed.center["slug"] = center_slug_override
+    if center_name_override:
+        parsed.center["name"] = center_name_override
     if code_prefix_override:
         parsed.center["code_prefix"] = code_prefix_override
 
@@ -438,6 +441,12 @@ class Command(BaseCommand):
             type=str,
             default="",
             help="Fuerza el prefijo de códigos de toma (p. ej. SCC); por defecto se infiere del slug del centro.",
+        )
+        parser.add_argument(
+            "--center-name",
+            type=str,
+            default="",
+            help="Nombre visible del centro (p. ej. si el PDF es catalog.pdf sin marca en el texto).",
         )
 
     def handle(self, *args, **options):

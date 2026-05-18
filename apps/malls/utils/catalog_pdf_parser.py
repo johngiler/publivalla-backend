@@ -311,6 +311,24 @@ def _to_decimal(value: str) -> Decimal | None:
         return None
 
 
+_GENERIC_CATALOG_PDF_STEMS = frozenset({"catalog", "catalogo", "catalogue", "data", "seed"})
+
+
+def _center_slug_from_pdf_path(pdf_path: Path) -> str | None:
+    """
+    Si el PDF tiene un nombre genérico (p. ej. ``catalog.pdf`` en ``.../scr/catalog.pdf``),
+    usa el directorio padre como slug del centro.
+    """
+    stem = pdf_path.stem.strip().lower()
+    if stem not in _GENERIC_CATALOG_PDF_STEMS:
+        return None
+    parent_name = pdf_path.parent.name.strip()
+    if not parent_name or parent_name.lower() in {"images", "malls", "data", "catalog"}:
+        return None
+    slug = slugify(parent_name)[:80]
+    return slug or None
+
+
 def _guess_center_name(text: str, pdf_name: str, ctx: CatalogPdfParseContext) -> str:
     def _normalize_center_name(raw: str) -> str:
         s = _clean_space(raw)
@@ -344,7 +362,11 @@ def _guess_center_name(text: str, pdf_name: str, ctx: CatalogPdfParseContext) ->
 
     stem = Path(pdf_name).stem.replace("_", " ").strip()
     stem_low = stem.lower()
-    if _line_starts_with_brand_center(stem_low, ctx) or stem_low.startswith("centro "):
+    stem_is_generic = stem_low in _GENERIC_CATALOG_PDF_STEMS
+
+    if not stem_is_generic and (
+        _line_starts_with_brand_center(stem_low, ctx) or stem_low.startswith("centro ")
+    ):
         return _normalize_center_name(stem)
 
     t = (text or "").strip()
@@ -356,6 +378,9 @@ def _guess_center_name(text: str, pdf_name: str, ctx: CatalogPdfParseContext) ->
         low = l.lower()
         if _line_starts_with_brand_center(low, ctx) or low.startswith("centro "):
             return _normalize_center_name(l)
+
+    if stem_is_generic:
+        return ""
     return _normalize_center_name(stem) or stem[:200]
 
 
@@ -701,6 +726,9 @@ def parse_catalog_pdf_to_json_bundle(
 
     center_name = _guess_center_name(full_text, p.name, ctx)
     center = _normalize_center(center_name, ctx)
+    path_slug = _center_slug_from_pdf_path(p)
+    if path_slug:
+        center["slug"] = path_slug
     center["catalog_pdf_path"] = str(p)
     center["code_prefix"] = _guess_code_prefix(center["slug"], center_name, ctx)
 
