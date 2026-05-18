@@ -12,7 +12,7 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib.utils import ImageReader
 
 
@@ -63,55 +63,51 @@ def _p_cell(text: str, style: ParagraphStyle, *, bold: bool = False) -> Paragrap
     return Paragraph(t, style)
 
 
-def _make_order_logo_draw(order):
+def _make_order_logo_flowable(order, *, max_width: float = 7.5 * cm):
     """
-    Cabecera con marca del workspace del pedido: solo PNG dedicado (``logo_png_artifacts``, Mi negocio).
-    Sin logotipo empaquetado en el repositorio.
+    Logotipo del workspace en el flujo del PDF (encima del texto, sin solapar).
+    Solo PNG dedicado (``logo_png_artifacts`` en Mi negocio).
     """
+    try:
+        client = order.client
+    except Exception:
+        return None
+    ws = getattr(client, "workspace", None)
+    if ws is None:
+        return None
 
-    def _logo_draw(canvas, doc):
+    png = getattr(ws, "logo_png_artifacts", None)
+    if not png or not getattr(png, "name", None):
+        return None
+    if Path(str(png.name)).suffix.lower() != ".png":
+        return None
+    try:
+        png.open("rb")
         try:
-            client = order.client
-        except Exception:
-            return
-        ws = getattr(client, "workspace", None)
-        if ws is None:
-            return
+            data = png.read()
+        finally:
+            png.close()
+        if not data:
+            return None
+        reader = ImageReader(BytesIO(data))
+        iw, ih = reader.getSize()
+        target_w = max_width
+        scale = target_w / max(float(iw), 1.0)
+        w_pt = target_w
+        h_pt = float(ih) * scale
+        flow = Image(BytesIO(data), width=w_pt, height=h_pt)
+        flow.hAlign = "CENTER"
+        return flow
+    except Exception:
+        return None
 
-        png = getattr(ws, "logo_png_artifacts", None)
-        if not png or not getattr(png, "name", None):
-            return
-        if Path(str(png.name)).suffix.lower() != ".png":
-            return
-        try:
-            png.open("rb")
-            try:
-                data = png.read()
-            finally:
-                png.close()
-            if not data:
-                return
-            img = ImageReader(BytesIO(data))
-            iw, ih = img.getSize()
-            target_w = 7.5 * cm
-            sw = target_w / max(float(iw), 1.0)
-            w_pt = target_w
-            h_pt = float(ih) * sw
-            x = (A4[0] - w_pt) / 2
-            y = A4[1] - 2.2 * cm - h_pt
-            canvas.drawImage(
-                img,
-                x,
-                y,
-                width=w_pt,
-                height=h_pt,
-                preserveAspectRatio=True,
-                mask="auto",
-            )
-        except Exception:
-            return
 
-    return _logo_draw
+def _prepend_order_logo(story: list, order) -> None:
+    """Inserta logo + espacio al inicio del story (si hay PNG de marca)."""
+    logo = _make_order_logo_flowable(order)
+    if logo is not None:
+        story.insert(0, Spacer(1, 0.35 * cm))
+        story.insert(0, logo)
 
 
 def _styles():
@@ -218,6 +214,7 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     )
     title_st, body_st, label_st, small_st = _styles()
     story = []
+    _prepend_order_logo(story, order)
     story.append(Paragraph("HOJA NEGOCIACION TOMAS PUBLICITARIAS", title_st))
     story.append(Spacer(1, 0.4 * cm))
 
@@ -281,8 +278,7 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
         )
     )
 
-    logo_draw = _make_order_logo_draw(order)
-    doc.build(story, onFirstPage=logo_draw, onLaterPages=logo_draw)
+    doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf
@@ -340,6 +336,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     )
     title_st, body_st, label_st, small_st = _styles()
     story = []
+    _prepend_order_logo(story, order)
     story.append(Paragraph(f"{_escape(city)}, {date_str}", ParagraphStyle(
         "R", parent=body_st, alignment=TA_RIGHT)))
     story.append(Spacer(1, 0.8 * cm))
@@ -416,8 +413,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
                            alignment=TA_CENTER, fontSize=9),
         )
     )
-    logo_draw = _make_order_logo_draw(order)
-    doc.build(story, onFirstPage=logo_draw, onLaterPages=logo_draw)
+    doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf
@@ -438,6 +434,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
                             rightMargin=2 * cm, topMargin=2.5 * cm, bottomMargin=2 * cm)
     title_st, body_st, _, _ = _styles()
     story = []
+    _prepend_order_logo(story, order)
     story.append(Paragraph("FACTURA / NOTA DE COBRO", title_st))
     story.append(
         Paragraph(f"<b>Nº referencia:</b> {_escape(inv_no)}", body_st))
@@ -502,8 +499,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
         )
     )
     story.append(t)
-    logo_draw = _make_order_logo_draw(order)
-    doc.build(story, onFirstPage=logo_draw, onLaterPages=logo_draw)
+    doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf
@@ -536,6 +532,7 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
     )
     title_st, body_st, label_st, small_st = _styles()
     story = []
+    _prepend_order_logo(story, order)
     story.append(Paragraph("SOLICITUD DE PERMISO DE INSTALACIÓN", title_st))
     story.append(Spacer(1, 0.35 * cm))
     story.append(
@@ -626,8 +623,7 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
         )
     )
 
-    logo_draw = _make_order_logo_draw(order)
-    doc.build(story, onFirstPage=logo_draw, onLaterPages=logo_draw)
+    doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf

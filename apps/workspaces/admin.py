@@ -40,11 +40,14 @@ class WorkspaceAdmin(admin.ModelAdmin):
             "Carga de catálogo (seed)",
             {
                 "fields": (
-                    "catalog_scc_seeded_at",
-                    "catalog_slc_seeded_at",
+                    "catalog_seeded_at",
+                    "catalog_seeded_centers",
                     "catalog_seed_feeder",
                 ),
-                "description": "Marcas de tiempo y usuario de referencia al importar con seed_production_catalog.",
+                "description": (
+                    "Auditoría de seed_production_catalog (cualquier owner/centro). "
+                    "catalog_seeded_centers: slug del CC → fecha ISO de la última importación."
+                ),
             },
         ),
         (
@@ -60,7 +63,7 @@ class WorkspaceAdmin(admin.ModelAdmin):
         ),
     )
     readonly_fields = (
-        "catalog_scc_seeded_at",
-        "catalog_slc_seeded_at",
+        "catalog_seeded_at",
+        "catalog_seeded_centers",
         "catalog_seed_feeder",
     )

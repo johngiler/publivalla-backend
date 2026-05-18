@@ -123,17 +123,16 @@ class Workspace(TimeStampedActiveModel):
         blank=True,
         help_text="Frase corta opcional (propuesta de valor). Sale en la API pública; la interfaz del marketplace aún puede no mostrarla hasta conectarla en el front.",
     )
-    catalog_scc_seeded_at = models.DateTimeField(
+    catalog_seeded_at = models.DateTimeField(
         null=True,
         blank=True,
         db_index=True,
-        help_text="Si está definido, el comando seed_production_catalog ya importó tomas SCC para este owner.",
+        help_text="Última importación de catálogo con seed_production_catalog en este workspace.",
     )
-    catalog_slc_seeded_at = models.DateTimeField(
-        null=True,
+    catalog_seeded_centers = models.JSONField(
+        default=dict,
         blank=True,
-        db_index=True,
-        help_text="Si está definido, el comando seed_production_catalog ya importó tomas SLC para este owner.",
+        help_text='Mapa slug de centro → fecha ISO de la última carga (p. ej. {"demo": "2026-05-18T12:00:00+00:00"}).',
     )
     catalog_seed_feeder = models.ForeignKey(
         settings.AUTH_USER_MODEL,

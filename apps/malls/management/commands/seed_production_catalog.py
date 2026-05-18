@@ -401,15 +401,15 @@ def _apply_parsed_catalog(
                 )
 
         now = timezone.now()
-        audit_updates: dict = {}
-        if center.slug == "scc":
-            audit_updates["catalog_scc_seeded_at"] = now
-        if center.slug == "slc":
-            audit_updates["catalog_slc_seeded_at"] = now
+        centers_map = dict(ws.catalog_seeded_centers or {})
+        centers_map[str(center.slug)] = now.isoformat()
+        audit_updates: dict = {
+            "catalog_seeded_at": now,
+            "catalog_seeded_centers": centers_map,
+        }
         if feeder is not None and ws.catalog_seed_feeder_id is None:
             audit_updates["catalog_seed_feeder_id"] = feeder.pk
-        if audit_updates:
-            Workspace.objects.filter(pk=ws.pk).update(**audit_updates)
+        Workspace.objects.filter(pk=ws.pk).update(**audit_updates)
 
     command.stdout.write(
         command.style.SUCCESS(
