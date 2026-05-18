@@ -6,6 +6,9 @@ from rest_framework import serializers
 
 from apps.ad_spaces.models import AdSpace
 from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
+from apps.availability.services.availability_block_services import (
+    normalize_block_type_on_save,
+)
 from apps.workspaces.tenant import get_workspace_for_request
 
 
@@ -53,6 +56,7 @@ class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
             "ad_space_title",
             "shopping_center_id",
             "shopping_center_name",
+            "type",
             "type_label",
             "created_at",
             "updated_at",
@@ -68,6 +72,12 @@ class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"end_date": "La fecha de fin no puede ser anterior a la de inicio."}
             )
+        is_active = attrs.get("is_active", getattr(self.instance, "is_active", True))
+        attrs["type"] = normalize_block_type_on_save(
+            is_active=is_active,
+            end_date=end,
+        )
+        attrs["is_active"] = attrs["type"] == AvailabilityBlockType.OCCUPIED
         return attrs
 
     def validate_ad_space(self, ad_space: AdSpace):

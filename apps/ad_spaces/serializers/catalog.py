@@ -7,11 +7,13 @@ from apps.malls.utils.high_season import (
     normalize_high_season_months,
 )
 from apps.ad_spaces.utils.availability_calendar import (
+    active_availability_block_ranges,
     availability_calendar_years,
     months_occupied_by_year,
     year_months_occupied,
 )
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
+from apps.orders.utils.validators import ad_space_allows_marketplace_reservation
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.providers.models import MountingProvider
@@ -35,7 +37,9 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     availability_calendar_years = serializers.SerializerMethodField(read_only=True)
     months_occupied = serializers.SerializerMethodField(read_only=True)
     months_occupied_by_year = serializers.SerializerMethodField(read_only=True)
+    availability_blocked_ranges = serializers.SerializerMethodField(read_only=True)
     status_label = serializers.SerializerMethodField()
+    marketplace_reservable = serializers.SerializerMethodField(read_only=True)
     type_label = serializers.CharField(source="get_type_display", read_only=True)
     cover_image = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField()
@@ -68,6 +72,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "availability_calendar_years",
             "months_occupied",
             "months_occupied_by_year",
+            "availability_blocked_ranges",
             "type",
             "type_label",
             "title",
@@ -81,6 +86,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "monthly_price_usd",
             "status",
             "status_label",
+            "marketplace_reservable",
             "cover_image",
             "gallery_images",
             "venue_zone",
@@ -115,8 +121,26 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         by = months_occupied_by_year(obj.pk)
         return {str(y): flags for y, flags in by.items()}
 
+    def get_availability_blocked_ranges(self, obj):
+        return [
+            {"start_date": start.isoformat(), "end_date": end.isoformat()}
+            for start, end in active_availability_block_ranges(obj.pk)
+        ]
+
     def get_status_label(self, obj):
         return obj.get_status_display()
+
+    def to_representation(self, instance):
+        from apps.ad_spaces.utils.marketplace_availability import (
+            sync_ad_space_commercial_status,
+        )
+
+        sync_ad_space_commercial_status(instance.pk)
+        instance.refresh_from_db(fields=["status"])
+        return super().to_representation(instance)
+
+    def get_marketplace_reservable(self, obj):
+        return ad_space_allows_marketplace_reservation(obj)
 
     def get_high_season_months(self, obj):
         return normalize_high_season_months(obj.shopping_center.high_season_months)

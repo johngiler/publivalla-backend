@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.db.models import Q
 
+from apps.ad_spaces.utils.marketplace_availability import sync_ad_space_commercial_status
 from apps.availability.models import AvailabilityBlock
 from apps.availability.serializers import AvailabilityBlockAdminSerializer
 from apps.users.views.base_viewsets import AdminModelViewSet
@@ -12,6 +13,22 @@ from apps.workspaces.tenant import get_workspace_for_request
 
 class AvailabilityBlockAdminViewSet(AdminModelViewSet):
     serializer_class = AvailabilityBlockAdminSerializer
+
+    def _after_block_change(self, ad_space_id: int) -> None:
+        sync_ad_space_commercial_status(ad_space_id, force_calendar=True)
+
+    def perform_create(self, serializer):
+        block = serializer.save()
+        self._after_block_change(block.ad_space_id)
+
+    def perform_update(self, serializer):
+        block = serializer.save()
+        self._after_block_change(block.ad_space_id)
+
+    def perform_destroy(self, instance):
+        ad_space_id = instance.ad_space_id
+        super().perform_destroy(instance)
+        self._after_block_change(ad_space_id)
 
     def get_queryset(self):
         qs = AvailabilityBlock.objects.select_related(
@@ -34,9 +51,9 @@ class AvailabilityBlockAdminViewSet(AdminModelViewSet):
                 qs = qs.filter(type=bt)
             active = self.request.query_params.get("active", "").strip()
             if active == "1":
-                qs = qs.filter(is_active=True)
+                qs = qs.filter(is_active=True, type="occupied")
             elif active == "0":
-                qs = qs.filter(is_active=False)
+                qs = qs.filter(Q(is_active=False) | Q(type="expired"))
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(

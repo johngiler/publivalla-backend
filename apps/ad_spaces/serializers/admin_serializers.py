@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.ad_spaces.models import AdSpace
+from apps.ad_spaces.models import AdSpace, AdSpaceStatus
 from apps.ad_spaces.utils.nomenclature import validate_toma_code
 
 
@@ -57,6 +57,17 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         if getattr(self, "instance", None) is not None:
             self.fields["code"].read_only = True
+
+    def validate_status(self, value):
+        if value == "reserved":
+            raise serializers.ValidationError(
+                "El estado «Reservado» ya no aplica a espacios publicitarios. "
+                "Usa Disponible, Ocupado o Bloqueado."
+            )
+        allowed = {c.value for c in AdSpaceStatus}
+        if value not in allowed:
+            raise serializers.ValidationError("Estado no válido.")
+        return value
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

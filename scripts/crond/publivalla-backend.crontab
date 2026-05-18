@@ -3,5 +3,8 @@
 # Holds de 72 h vencidos: cancela pedido «enviado» y libera tomas (cada hora, minuto 5)
 5 * * * * cd /home/git/backend && .venv/bin/python manage.py expire_order_holds >> /home/git/backend/logs/cron-expire-order-holds.log 2>&1
 
+# Bloqueos de disponibilidad con fecha fin pasada: caducar y recalcular tomas (diario 00:10)
+10 0 * * * cd /home/git/backend && .venv/bin/python manage.py expire_availability_blocks >> /home/git/backend/logs/cron-expire-availability-blocks.log 2>&1
+
 # Órdenes «activa» con última línea pasada: pasar a «vencida» (diario 00:15)
 15 0 * * * cd /home/git/backend && .venv/bin/python manage.py expire_active_orders >> /home/git/backend/logs/cron-expire-active-orders.log 2>&1

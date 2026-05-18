@@ -26,7 +26,6 @@ class AdSpaceType(models.TextChoices):
 
 class AdSpaceStatus(models.TextChoices):
     AVAILABLE = "available", "Disponible"
-    RESERVED = "reserved", "Reservado"
     OCCUPIED = "occupied", "Ocupado"
     BLOCKED = "blocked", "Bloqueado"
 

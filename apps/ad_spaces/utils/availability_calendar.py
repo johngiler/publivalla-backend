@@ -1,4 +1,4 @@
-"""Meses ocupados por toma (órdenes en pipeline + bloques) para catálogo público."""
+"""Meses ocupados por toma (órdenes en pipeline + bloqueos) para catálogo público."""
 
 from __future__ import annotations
 
@@ -6,9 +6,12 @@ from calendar import monthrange
 from datetime import date
 
 from django.conf import settings
+from django.utils import timezone
 
-from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
 from apps.ad_spaces.models import AdSpace
+from apps.availability.services.availability_block_services import (
+    calendar_blocking_availability_blocks,
+)
 from apps.orders.models import OrderItem
 from apps.orders.utils.competing_reservations import pipeline_statuses_blocking_marketplace
 from apps.orders.utils.validators import date_ranges_overlap
@@ -16,9 +19,27 @@ from apps.orders.utils.validators import date_ranges_overlap
 DEFAULT_CALENDAR_YEARS = 3
 
 
+def calendar_ref_date() -> date:
+    return timezone.localdate()
+
+
+def active_availability_block_ranges(
+    ad_space_id: int,
+    *,
+    ref: date | None = None,
+) -> list[tuple[date, date]]:
+    """Rangos de bloqueos ocupados vigentes (mantenimiento / reserva manual)."""
+    ref = ref if ref is not None else calendar_ref_date()
+    return list(
+        calendar_blocking_availability_blocks(ad_space_id, ref=ref).values_list(
+            "start_date", "end_date"
+        )
+    )
+
+
 def availability_calendar_years(*, ref: date | None = None) -> list[int]:
     """Años mostrados en catálogo: año de referencia + los siguientes (p. ej. 3 años)."""
-    y0 = (ref if ref is not None else date.today()).year
+    y0 = (ref if ref is not None else calendar_ref_date()).year
     n = int(getattr(settings, "AVAILABILITY_CALENDAR_YEARS", DEFAULT_CALENDAR_YEARS))
     n = max(1, min(n, 6))
     return list(range(y0, y0 + n))
@@ -41,17 +62,7 @@ def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
         ad_space_id=ad_space_id,
         order__status__in=statuses,
     ).values_list("start_date", "end_date")
-    blocks = AvailabilityBlock.objects.filter(
-        ad_space_id=ad_space_id,
-        is_active=True,
-        type__in=(
-            AvailabilityBlockType.OCCUPIED,
-            AvailabilityBlockType.BLOCKED,
-            AvailabilityBlockType.RESERVED,
-        ),
-    ).values_list("start_date", "end_date")
-
-    ranges = list(items) + list(blocks)
+    ranges = list(items) + active_availability_block_ranges(ad_space_id)
 
     for m in range(1, 13):
         first = date(year, m, 1)

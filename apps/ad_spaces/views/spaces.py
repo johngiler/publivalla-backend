@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.ad_spaces.models import AdSpace, AdSpaceStatus, AdSpaceType
+from apps.ad_spaces.models import AdSpace, AdSpaceType
 from apps.ad_spaces.serializers import (
     AdSpaceSerializer,
     CatalogMountingProviderSerializer,
@@ -117,7 +117,9 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         ser = CheckRentalRangeSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         segments = ser.validated_data["_segments"]
-        if space.status != AdSpaceStatus.AVAILABLE:
+        from apps.orders.utils.validators import ad_space_allows_marketplace_reservation
+
+        if not ad_space_allows_marketplace_reservation(space):
             return Response(
                 {
                     "ok": False,

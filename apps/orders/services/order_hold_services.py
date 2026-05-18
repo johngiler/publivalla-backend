@@ -7,9 +7,8 @@ from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction
 from django.utils import timezone
 
-from apps.ad_spaces.models import AdSpace, AdSpaceStatus
-from apps.orders.models import Order, OrderItem, OrderStatus
-from apps.orders.utils.validators import PIPELINE_STATUSES, hold_expires_at_from_now
+from apps.orders.models import Order, OrderStatus
+from apps.orders.utils.validators import hold_expires_at_from_now
 
 HOLD_DURATION_HOURS = int(getattr(settings, "ORDER_HOLD_DURATION_HOURS", 72))
 
@@ -40,45 +39,18 @@ def order_display_status_label(order: Order, *, ref=None) -> str:
     return order.get_status_display()
 
 
-def _other_pipeline_orders_for_space(ad_space_id: int, *, exclude_order_id: int) -> bool:
-    return (
-        OrderItem.objects.filter(
-            ad_space_id=ad_space_id,
-            order__status__in=PIPELINE_STATUSES,
-        )
-        .exclude(order_id=exclude_order_id)
-        .exists()
-    )
-
-
 def reserve_ad_spaces_for_order(order: Order) -> list[int]:
-    """Marca tomas disponibles como «reservado» mientras dura el hold."""
-    updated: list[int] = []
-    for item in order.items.select_related("ad_space"):
-        ad = item.ad_space
-        if ad.status != AdSpaceStatus.AVAILABLE:
-            continue
-        AdSpace.objects.filter(pk=ad.pk, status=AdSpaceStatus.AVAILABLE).update(
-            status=AdSpaceStatus.RESERVED
-        )
-        updated.append(ad.pk)
-    return updated
+    """Sincroniza estado comercial según meses libres (sin marcar toda la toma como reservada)."""
+    from apps.ad_spaces.utils.marketplace_availability import sync_ad_spaces_for_order
+
+    return sync_ad_spaces_for_order(order)
 
 
 def release_reserved_ad_spaces_for_order(order: Order) -> list[int]:
-    """Devuelve a «disponible» las tomas reservadas por este pedido si no hay otro pipeline."""
-    released: list[int] = []
-    for item in order.items.select_related("ad_space"):
-        ad = item.ad_space
-        if ad.status != AdSpaceStatus.RESERVED:
-            continue
-        if _other_pipeline_orders_for_space(ad.pk, exclude_order_id=order.pk):
-            continue
-        AdSpace.objects.filter(pk=ad.pk, status=AdSpaceStatus.RESERVED).update(
-            status=AdSpaceStatus.AVAILABLE
-        )
-        released.append(ad.pk)
-    return released
+    """Tras liberar hold, recalcula disponible/ocupado según calendario."""
+    from apps.ad_spaces.utils.marketplace_availability import sync_ad_spaces_for_order
+
+    return sync_ad_spaces_for_order(order)
 
 
 def _workspace_for_order(order: Order):

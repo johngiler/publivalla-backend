@@ -4,9 +4,8 @@ from apps.common.models import TimeStampedActiveModel
 
 
 class AvailabilityBlockType(models.TextChoices):
-    RESERVED = "reserved", "Reservado"
     OCCUPIED = "occupied", "Ocupado"
-    BLOCKED = "blocked", "Bloqueado"
+    EXPIRED = "expired", "Caducado"
 
 
 class AvailabilityBlock(TimeStampedActiveModel):
@@ -22,7 +21,7 @@ class AvailabilityBlock(TimeStampedActiveModel):
         max_length=500,
         blank=True,
         default="",
-        help_text="Motivo interno (solo panel admin).",
+        help_text="Motivo interno (mantenimiento, reserva manual, etc.).",
     )
 
     class Meta:

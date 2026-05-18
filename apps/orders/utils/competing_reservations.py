@@ -13,11 +13,6 @@ from django.db.models import Count
 
 from apps.ad_spaces.models import AdSpace
 from apps.orders.models import Order, OrderItem, OrderStatus
-from apps.orders.services.order_hold_services import (
-    NOTE_CANCELLED_BY_TEAM,
-    cancel_order_releasing_hold,
-    reserve_ad_spaces_for_order,
-)
 from apps.orders.services.order_services import log_order_status_transition
 from apps.orders.utils.validators import PIPELINE_STATUSES, date_ranges_overlap
 from apps.workspaces.models import Workspace
@@ -76,14 +71,14 @@ def order_item_conflicts_with_workspace(
 
     from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
 
+    from apps.ad_spaces.utils.availability_calendar import calendar_ref_date
+
+    ref = calendar_ref_date()
     blocks = AvailabilityBlock.objects.filter(
         ad_space_id=ad_space_id,
         is_active=True,
-        type__in=(
-            AvailabilityBlockType.OCCUPIED,
-            AvailabilityBlockType.BLOCKED,
-            AvailabilityBlockType.RESERVED,
-        ),
+        type=AvailabilityBlockType.OCCUPIED,
+        end_date__gte=ref,
     )
     for b in blocks.iterator():
         if date_ranges_overlap(start, end, b.start_date, b.end_date):
@@ -155,6 +150,14 @@ def _serialize_competing_order(order: Order, ad_space_id: int) -> dict:
         if item.ad_space_id == ad_space_id
     ]
     line = lines[0] if lines else None
+    period_lines = [
+        {
+            "start_date": item.start_date.isoformat(),
+            "end_date": item.end_date.isoformat(),
+            "subtotal": str(item.subtotal),
+        }
+        for item in lines
+    ]
     return {
         "id": order.pk,
         "code": order.code,
@@ -164,6 +167,7 @@ def _serialize_competing_order(order: Order, ad_space_id: int) -> dict:
         "total_amount": str(order.total_amount),
         "start_date": line.start_date.isoformat() if line else None,
         "end_date": line.end_date.isoformat() if line else None,
+        "period_lines": period_lines,
     }
 
 
@@ -184,6 +188,12 @@ def award_competing_submission(
         raise ValueError("El pedido elegido no está entre las solicitudes en disputa.")
 
     losers = [o for o in orders if o.pk != winner_order_id]
+
+    from apps.orders.services.order_hold_services import (
+        NOTE_CANCELLED_BY_TEAM,
+        cancel_order_releasing_hold,
+        reserve_ad_spaces_for_order,
+    )
 
     for loser in losers:
         cancel_order_releasing_hold(

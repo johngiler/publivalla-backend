@@ -134,19 +134,24 @@ class Order(TimeStampedActiveModel):
 
     def _assign_code(self):
         from apps.clients.models import Client
-        from apps.orders.utils.references import format_order_public_reference
+        from apps.orders.utils.references import (
+            format_order_public_reference,
+            workspace_order_sequence,
+        )
 
         slug = ""
+        sequence = self.pk
         if self.client_id:
             row = (
                 Client.objects.select_related("workspace")
                 .filter(pk=self.client_id)
-                .only("workspace__slug")
+                .only("workspace__slug", "workspace_id")
                 .first()
             )
             if row and row.workspace_id:
                 slug = row.workspace.slug or ""
-        ref = format_order_public_reference(self.pk, slug)
+                sequence = workspace_order_sequence(self.pk, row.workspace_id)
+        ref = format_order_public_reference(sequence, slug)
         Order.objects.filter(pk=self.pk).update(code=ref)
         self.code = ref
 
