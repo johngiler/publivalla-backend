@@ -57,6 +57,7 @@ class WorkspaceAdmin(admin.ModelAdmin):
                     "can_create_shopping_centers",
                     "can_create_ad_spaces",
                     "can_create_marketplace_admin_users",
+                    "marketplace_bidding_enabled",
                 ),
                 "description": "Si desactivas una opción, la API y el panel bloquean esa acción para los administradores del owner.",
             },

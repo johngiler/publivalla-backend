@@ -5,3 +5,6 @@
 
 # Órdenes «activa» con última línea pasada: pasar a «vencida» (diario 00:15)
 15 0 * * * cd /home/git/backend && .venv/bin/python manage.py expire_active_orders >> /home/git/backend/logs/cron-expire-active-orders.log 2>&1
+
+# Pujas abiertas con cierre vencido: pasar a «cerrada» (cada hora, minuto 10)
+10 * * * * cd /home/git/backend && .venv/bin/python manage.py close_expired_auctions >> /home/git/backend/logs/cron-close-expired-auctions.log 2>&1

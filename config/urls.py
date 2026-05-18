@@ -20,6 +20,7 @@ from apps.clients.views import (
 )
 from apps.malls.views import ShoppingCenterAdminViewSet, ShoppingCenterViewSet
 from apps.availability.views import AvailabilityBlockAdminViewSet
+from apps.bidding.views import PlaceAuctionBidView, SpaceAuctionAdminViewSet
 from apps.providers.views import MountingProviderAdminViewSet
 from apps.orders.views import (
     AdminMarketplaceContractsView,
@@ -66,6 +67,7 @@ router.register(
     AvailabilityBlockAdminViewSet,
     basename="admin-availability-block",
 )
+router.register(r"admin/auctions", SpaceAuctionAdminViewSet, basename="admin-auction")
 router.register(r"admin/users", UserAdminViewSet, basename="admin-user")
 
 catalog_router = DefaultRouter()
@@ -90,6 +92,11 @@ urlpatterns = [
         name="guest-checkout-validate-datos",
     ),
     path("api/checkout/guest/", GuestCheckoutView.as_view(), name="guest-checkout"),
+    path(
+        "api/auctions/<int:auction_id>/bids/",
+        PlaceAuctionBidView.as_view(),
+        name="auction-place-bid",
+    ),
     path("api/auth/activate-client/", ActivateClientAccountView.as_view(), name="activate-client"),
     path("api/auth/validate-password/", ValidatePasswordView.as_view(), name="validate-password"),
     path(

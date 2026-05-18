@@ -19,6 +19,7 @@ from apps.orders.models import (
 from apps.malls.models import ShoppingCenter
 from apps.providers.models import MountingProvider
 from apps.orders.services import default_invoice_number_for_order, log_order_status_transition
+from apps.bidding.utils.queries import ad_space_has_open_auction
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
@@ -850,6 +851,15 @@ class OrderItemWriteSerializer(serializers.Serializer):
                         f"La toma {ad.code} no admite nuevas reservas "
                         f"(estado: {ad.get_status_display()})."
                     )
+                }
+            )
+        if ad_space_has_open_auction(ad.pk):
+            raise serializers.ValidationError(
+                {
+                    "ad_space": (
+                        f"La toma {ad.code} tiene una puja abierta. "
+                        "No puedes reservarla por el carrito hasta que finalice la puja."
+                    ),
                 }
             )
         monthly = ad.monthly_price_usd

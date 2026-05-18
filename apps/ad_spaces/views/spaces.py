@@ -17,6 +17,7 @@ from apps.orders.utils.rental_billing import (
     total_billed_units,
 )
 from apps.orders.utils.validators import order_item_conflicts
+from apps.bidding.utils.queries import ad_space_has_open_auction
 from apps.workspaces.tenant import get_workspace_for_request
 
 _EMPTY_CITY_SENTINEL = "__empty__"
@@ -124,6 +125,17 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                     "detail": (
                         "Esta toma no admite nuevas reservas en el marketplace "
                         f"(estado: {space.get_status_display()})."
+                    ),
+                },
+                status=200,
+            )
+        if ad_space_has_open_auction(space.pk):
+            return Response(
+                {
+                    "ok": False,
+                    "detail": (
+                        "Esta toma tiene una puja abierta. "
+                        "No puedes reservarla por el carrito hasta que finalice la puja."
                     ),
                 },
                 status=200,

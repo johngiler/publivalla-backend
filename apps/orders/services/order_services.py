@@ -14,6 +14,7 @@ from apps.orders.services.order_hold_services import (
     NOTE_HOLD_ON_SUBMIT,
     apply_hold_on_order_submit,
 )
+from apps.bidding.utils.queries import ad_space_has_open_auction
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
@@ -123,6 +124,15 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
                         f"La toma {item.ad_space.code} no admite enviar la solicitud "
                         f"(estado: {item.ad_space.get_status_display()}). "
                         "Quítala del carrito o elige otra toma."
+                    ),
+                }
+            )
+        if ad_space_has_open_auction(item.ad_space_id):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        f"La toma {item.ad_space.code} tiene una puja abierta. "
+                        "No puedes reservarla por el carrito hasta que finalice la puja."
                     ),
                 }
             )

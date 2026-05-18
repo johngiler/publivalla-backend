@@ -25,6 +25,7 @@ PLACEHOLDER_DEFAULTS: dict[str, object] = {
     "can_create_shopping_centers": True,
     "can_create_ad_spaces": True,
     "can_create_marketplace_admin_users": True,
+    "marketplace_bidding_enabled": False,
 }
 
 _TEXT_FIELDS = (

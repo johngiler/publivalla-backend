@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.availability.apps.AvailabilityConfig",
     "apps.clients.apps.ClientsConfig",
     "apps.orders.apps.OrdersConfig",
+    "apps.bidding.apps.BiddingConfig",
 ]
 
 MIDDLEWARE = [

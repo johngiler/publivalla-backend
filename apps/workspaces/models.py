@@ -157,6 +157,11 @@ class Workspace(TimeStampedActiveModel):
         default=True,
         help_text="Si está desactivado, no se pueden crear ni promover usuarios con rol administrador del panel.",
     )
+    marketplace_bidding_enabled = models.BooleanField(
+        "Pujas en marketplace",
+        default=False,
+        help_text="Si está activo, el operador puede publicar pujas por toma y los clientes pueden ofertar.",
+    )
     # Correo transaccional (notificaciones de pedidos): remitente SMTP del owner, distinto del correo personal.
     transactional_email_host = models.CharField(
         "Servidor SMTP (envío de notificaciones)",
