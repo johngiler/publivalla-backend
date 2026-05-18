@@ -12,11 +12,16 @@ RSYNC_EXCLUDE=(
   --exclude "__pycache__"
   --exclude "*.pyc"
   --exclude ".env"
+  --exclude ".env.production"
   --exclude "config/settings/local_settings.py"
   --exclude "db.sqlite3"
   --exclude "staticfiles"
+  --exclude "static"
   --exclude "media"
+  --exclude "data"
   --exclude ".git"
+  --exclude ".DS_Store"
+  --exclude "*.log"
 )
 
 cd "$BACKEND_DIR"
