@@ -1,21 +1,16 @@
 """
-Importa catálogo (centro + tomas) desde un PDF de espacios publicitarios para **cualquier workspace**.
+Importa catálogo (centro + tomas) para **cualquier workspace**: desde PDF o modo demostración.
 
-Flujo:
+**Sin ``--pdf``** (o con ``--demo``): genera un centro y tomas ficticios con todos los campos
+rellenos, para mostrar el marketplace antes de recibir el PDF real del cliente.
 
-1) ``--pdf`` obligatorio y ``--workspace-slug`` del owner destino (p. ej. ``sambil``, ``nobis``, ``acme``).
-2) Parsea el PDF y escribe ``data/<workspace_slug>/catalog/data.json``.
-3) Aplica ``ShoppingCenter`` + ``AdSpace`` en ese workspace.
-4) ``--images-dir`` opcional: fotos por convención de nombre ``TOMA n`` (misma para todos los owners).
+**Con ``--pdf``**: flujo de producción (parseo, ``data/<slug>/catalog/data.json``, BD).
 
-El parser usa el **slug y nombre del workspace** para reconocer la marca en títulos del PDF
-(no hay tenant fijo en código). Ejemplo de uso para un cliente::
+Ejemplos::
 
-    python manage.py seed_production_catalog \\
-      --workspace-slug sambil \\
-      --pdf /ruta/Sambil_Caracas.pdf \\
-      --images-dir /ruta/fotos_chacao
-
+    python manage.py seed_production_catalog --workspace-slug acme
+    python manage.py seed_production_catalog --workspace-slug acme --demo-toma-count 10
+    python manage.py seed_production_catalog --workspace-slug sambil --pdf /ruta/catalogo.pdf
 """
 
 from __future__ import annotations
@@ -33,8 +28,10 @@ from django.utils import timezone
 from apps.common.utils.data_layout import catalog_seed_json_path
 from apps.ad_spaces.utils.gallery import sync_cover_from_gallery
 from apps.ad_spaces.models import AdSpace, AdSpaceImage, AdSpaceStatus
+from apps.malls.utils.catalog_demo_bundle import build_demo_catalog_bundle
 from apps.malls.utils.catalog_pdf_parser import (
     CatalogPdfParseContext,
+    ParsedCatalog,
     code_prefix_for_center_slug,
     parse_catalog_pdf_to_json_bundle,
     short_center_slug_candidates,
@@ -259,14 +256,191 @@ def _apply_toma_gallery(ad: AdSpace, paths: list[Path]) -> None:
     sync_cover_from_gallery(ad)
 
 
+def _apply_parsed_catalog(
+    command: BaseCommand,
+    ws: Workspace,
+    parsed: ParsedCatalog,
+    *,
+    parse_ctx: CatalogPdfParseContext,
+    options: dict,
+    demo_mode: bool,
+) -> None:
+    """Escribe data.json y aplica centro + tomas en BD."""
+    data_json_path = catalog_seed_json_path(ws.slug)
+    dry_run = bool(options.get("dry_run"))
+    force = bool(options.get("force"))
+    center_slug_override = (options.get("center_slug") or "").strip()
+    code_prefix_override = (options.get("code_prefix") or "").strip().upper()
+    images_raw = (options.get("images_dir") or "").strip()
+    allow_missing_images = not bool(options.get("require_images"))
+
+    if center_slug_override:
+        parsed.center["slug"] = center_slug_override
+    if code_prefix_override:
+        parsed.center["code_prefix"] = code_prefix_override
+
+    if dry_run:
+        write_bundle_json(parsed, data_json_path)
+        command.stdout.write(command.style.SUCCESS(f"Generado data.json: {data_json_path}"))
+        command.stdout.write(
+            command.style.NOTICE(
+                f"Centro: {parsed.center.get('name')} (slug={parsed.center.get('slug')}) · "
+                f"Tomas: {len(parsed.ad_spaces)}"
+                + (" · modo demo" if demo_mode else "")
+            )
+        )
+        command.stdout.write(command.style.SUCCESS("Dry-run: no se escribieron cambios en BD."))
+        return
+
+    feeder = _first_marketplace_admin_for_workspace(ws)
+    if feeder is None:
+        if demo_mode:
+            command.stdout.write(
+                command.style.WARNING(
+                    "Modo demo: no hay administrador marketplace en el workspace; "
+                    "se omite catalog_seed_feeder."
+                )
+            )
+        else:
+            raise CommandError(
+                "No hay ningún usuario con rol «Administrador marketplace» vinculado a este "
+                "workspace. Crea primero ese usuario para el owner y vuelve a ejecutar el comando."
+            )
+
+    center_slug = _resolve_center_slug_for_apply(ws, parsed.center, parse_ctx=parse_ctx)
+    if not center_slug:
+        raise CommandError("No se pudo inferir center.slug (usa --center-slug).")
+    parsed.center["slug"] = center_slug
+    center_name = str(parsed.center.get("name") or "")
+    prefix = code_prefix_override or str(parsed.center.get("code_prefix") or "").strip().upper()
+    if not prefix:
+        prefix = _code_prefix_for_center_slug(center_slug, center_name)
+    parsed.center["code_prefix"] = prefix
+    _rewrite_space_codes(parsed.ad_spaces, new_prefix=prefix)
+
+    write_bundle_json(parsed, data_json_path)
+    command.stdout.write(command.style.SUCCESS(f"Generado data.json: {data_json_path}"))
+    command.stdout.write(
+        command.style.NOTICE(
+            f"Centro: {parsed.center.get('name')} (slug={parsed.center.get('slug')}) · "
+            f"Tomas: {len(parsed.ad_spaces)}"
+            + (" · modo demo" if demo_mode else "")
+        )
+    )
+    space_codes = [
+        str(x.get("code") or "").strip()
+        for x in parsed.ad_spaces
+        if isinstance(x, dict)
+    ]
+    space_codes = [c for c in space_codes if c]
+    _validate_existing(ws, center_slug=center_slug, space_codes=space_codes, force=force)
+
+    images_dir = Path(images_raw).expanduser().resolve() if images_raw else None
+    if images_dir is not None and not images_dir.is_dir():
+        raise CommandError(f"No existe el directorio de imágenes: {images_dir}")
+
+    with transaction.atomic():
+        c = parsed.center
+        defaults = {k: v for k, v in c.items() if k not in ("slug", "catalog_pdf_path", "code_prefix")}
+        defaults.setdefault("country", "Venezuela")
+        defaults.setdefault("on_homepage", True)
+        defaults.setdefault("marketplace_catalog_enabled", True)
+        defaults.setdefault("is_active", True)
+        center, created = ShoppingCenter.objects.update_or_create(
+            workspace=ws,
+            slug=center_slug,
+            defaults=defaults,
+        )
+        verb = "Creado" if created else "Actualizado"
+        command.stdout.write(command.style.SUCCESS(f"{verb} centro {center.slug}: {center.name}"))
+
+        created_n = updated_n = 0
+        for spec in parsed.ad_spaces:
+            if not isinstance(spec, dict):
+                continue
+            code = str(spec.get("code") or "").strip()
+            if not code:
+                continue
+            defaults = {k: v for k, v in spec.items() if k != "code"}
+            defaults["shopping_center"] = center
+            defaults["status"] = AdSpaceStatus.AVAILABLE
+            defaults["is_active"] = True
+            for dk in ("monthly_price_usd", "width", "height", "hem_pocket_top_cm"):
+                if dk in defaults:
+                    defaults[dk] = _dec(defaults[dk])
+            for k in (
+                "description",
+                "material",
+                "location_description",
+                "level",
+                "venue_zone",
+                "production_specs",
+                "installation_notes",
+            ):
+                if k in defaults and (defaults[k] is None or str(defaults[k]).strip() == ""):
+                    defaults.pop(k, None)
+            if defaults.get("type") in ("", None):
+                defaults.pop("type", None)
+            if "monthly_price_usd" not in defaults or defaults.get("monthly_price_usd") is None:
+                raise CommandError(f"{code}: falta Canon mensual (monthly_price_usd).")
+            ad, was_created = AdSpace.objects.update_or_create(code=code, defaults=defaults)
+            created_n += 1 if was_created else 0
+            updated_n += 0 if was_created else 1
+
+            paths: list[Path] = []
+            if images_dir is not None:
+                paths = _collect_images_for_code(images_dir, code)
+            paths, skipped_img = _filter_seed_image_paths(paths)
+            for name in skipped_img:
+                command.stdout.write(command.style.WARNING(f"{code}: omitido «{name}» (no imagen válida)."))
+            if paths:
+                _apply_toma_gallery(ad, paths)
+            elif not allow_missing_images and images_dir is not None:
+                raise CommandError(
+                    f"{code}: no se encontraron imágenes válidas en {images_dir} y está activo --require-images."
+                )
+
+        now = timezone.now()
+        audit_updates: dict = {}
+        if center.slug == "scc":
+            audit_updates["catalog_scc_seeded_at"] = now
+        if center.slug == "slc":
+            audit_updates["catalog_slc_seeded_at"] = now
+        if feeder is not None and ws.catalog_seed_feeder_id is None:
+            audit_updates["catalog_seed_feeder_id"] = feeder.pk
+        if audit_updates:
+            Workspace.objects.filter(pk=ws.pk).update(**audit_updates)
+
+    command.stdout.write(
+        command.style.SUCCESS(
+            f"Catálogo listo: {center_slug} · tomas={len(space_codes)} · creadas={created_n} · actualizadas={updated_n}."
+        )
+    )
+
+
 class Command(BaseCommand):
     help = (
-        "Importa catálogo (centro + tomas) desde un PDF para el workspace indicado "
-        "(cualquier owner; p. ej. sambil en producción)."
+        "Importa catálogo (centro + tomas) desde PDF o genera datos demo si no hay PDF."
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--pdf", type=str, required=True, help="Ruta al PDF de catálogo (obligatorio).")
+        parser.add_argument(
+            "--pdf",
+            type=str,
+            default="",
+            help="Ruta al PDF de catálogo. Si se omite, se usa catálogo demo ficticio.",
+        )
+        parser.add_argument(
+            "--demo",
+            action="store_true",
+            help="Fuerza catálogo demo aunque exista otro flujo (equivale a no pasar --pdf).",
+        )
+        parser.add_argument(
+            "--demo-toma-count",
+            type=int,
+            default=12,
+            help="Tomas a crear en modo demo (mín. 4, máx. 24; por defecto 12).",
+        )
         parser.add_argument(
             "--images-dir",
             type=str,
@@ -320,168 +494,46 @@ class Command(BaseCommand):
                     "No hay workspace activo. Define DEFAULT_WORKSPACE_SLUG, usa --workspace-slug o crea un workspace."
                 )
 
-        data_json_path = catalog_seed_json_path(ws.slug)
         parse_ctx = CatalogPdfParseContext.for_workspace(ws.slug, ws.name)
 
         pdf_raw = (options.get("pdf") or "").strip()
-        images_raw = (options.get("images_dir") or "").strip()
-        allow_missing_images = not bool(options.get("require_images"))
-        dry_run = bool(options.get("dry_run"))
-        force = bool(options.get("force"))
+        demo_flag = bool(options.get("demo"))
+        if demo_flag and pdf_raw:
+            raise CommandError("No combines --demo con --pdf; usa uno u otro.")
 
-        pdf_path = Path(pdf_raw).expanduser().resolve()
-        if not pdf_path.is_file():
-            raise CommandError(f"No existe el PDF: {pdf_path}")
-        images_dir = Path(images_raw).expanduser().resolve() if images_raw else None
-        if images_dir is not None and not images_dir.is_dir():
-            raise CommandError(f"No existe el directorio de imágenes: {images_dir}")
+        use_demo = demo_flag or not pdf_raw
 
-        try:
-            parsed = parse_catalog_pdf_to_json_bundle(
-                pdf_path,
-                workspace_slug=ws.slug,
-                workspace_name=ws.name,
+        if use_demo:
+            toma_count = int(options.get("demo_toma_count") or 8)
+            parsed = build_demo_catalog_bundle(
+                ws,
+                center_slug=(options.get("center_slug") or "").strip(),
+                code_prefix=(options.get("code_prefix") or "").strip().upper(),
+                toma_count=toma_count,
             )
-        except Exception as exc:
-            raise CommandError(f"No se pudo parsear el PDF: {exc}") from exc
-
-        center_slug_override = (options.get("center_slug") or "").strip()
-        code_prefix_override = (options.get("code_prefix") or "").strip().upper()
-
-        if center_slug_override:
-            parsed.center["slug"] = center_slug_override
-        if code_prefix_override:
-            parsed.center["code_prefix"] = code_prefix_override
-
-        if dry_run:
-            write_bundle_json(parsed, data_json_path)
-            self.stdout.write(self.style.SUCCESS(f"Generado data.json: {data_json_path}"))
             self.stdout.write(
                 self.style.NOTICE(
-                    f"Centro detectado: {parsed.center.get('name')} (slug={parsed.center.get('slug')}) · "
-                    f"Tomas detectadas: {len(parsed.ad_spaces)}"
+                    f"Modo demo: catálogo ficticio para «{ws.slug}» ({len(parsed.ad_spaces)} tomas)."
                 )
             )
-            self.stdout.write(self.style.SUCCESS("Dry-run: no se escribieron cambios en BD."))
-            return
+        else:
+            pdf_path = Path(pdf_raw).expanduser().resolve()
+            if not pdf_path.is_file():
+                raise CommandError(f"No existe el PDF: {pdf_path}")
+            try:
+                parsed = parse_catalog_pdf_to_json_bundle(
+                    pdf_path,
+                    workspace_slug=ws.slug,
+                    workspace_name=ws.name,
+                )
+            except Exception as exc:
+                raise CommandError(f"No se pudo parsear el PDF: {exc}") from exc
 
-        feeder = None
-        feeder = _first_marketplace_admin_for_workspace(ws)
-        if feeder is None:
-            raise CommandError(
-                "No hay ningún usuario con rol «Administrador marketplace» vinculado a este "
-                "workspace. Crea primero ese usuario para el owner y vuelve a ejecutar el comando."
-            )
-
-        center_slug = _resolve_center_slug_for_apply(
-            ws, parsed.center, parse_ctx=parse_ctx
-        )
-        if not center_slug:
-            raise CommandError("El parser no pudo inferir center.slug (usa --center-slug).")
-        parsed.center["slug"] = center_slug
-        center_name = str(parsed.center.get("name") or "")
-        prefix = code_prefix_override or str(parsed.center.get("code_prefix") or "").strip().upper()
-        if not prefix:
-            prefix = _code_prefix_for_center_slug(center_slug, center_name)
-        parsed.center["code_prefix"] = prefix
-        _rewrite_space_codes(parsed.ad_spaces, new_prefix=prefix)
-
-        write_bundle_json(parsed, data_json_path)
-        self.stdout.write(self.style.SUCCESS(f"Generado data.json: {data_json_path}"))
-        self.stdout.write(
-            self.style.NOTICE(
-                f"Centro detectado: {parsed.center.get('name')} (slug={parsed.center.get('slug')}) · "
-                f"Tomas detectadas: {len(parsed.ad_spaces)}"
-            )
-        )
-        space_codes = [
-            str(x.get("code") or "").strip()
-            for x in parsed.ad_spaces
-            if isinstance(x, dict)
-        ]
-        space_codes = [c for c in space_codes if c]
-        _validate_existing(ws, center_slug=center_slug, space_codes=space_codes, force=force)
-
-        with transaction.atomic():
-            # Centro (siempre existe antes de tomas)
-            c = parsed.center
-            defaults = {k: v for k, v in c.items() if k not in ("slug", "catalog_pdf_path", "code_prefix")}
-            defaults.setdefault("country", "Venezuela")
-            defaults.setdefault("on_homepage", True)
-            defaults.setdefault("marketplace_catalog_enabled", True)
-            defaults.setdefault("is_active", True)
-            center, created = ShoppingCenter.objects.update_or_create(
-                workspace=ws,
-                slug=center_slug,
-                defaults=defaults,
-            )
-            verb = "Creado" if created else "Actualizado"
-            self.stdout.write(self.style.SUCCESS(f"{verb} centro {center.slug}: {center.name}"))
-
-            created_n = updated_n = 0
-            for spec in parsed.ad_spaces:
-                if not isinstance(spec, dict):
-                    continue
-                code = str(spec.get("code") or "").strip()
-                if not code:
-                    continue
-                defaults = {k: v for k, v in spec.items() if k != "code"}
-                defaults["shopping_center"] = center
-                defaults["status"] = AdSpaceStatus.AVAILABLE
-                defaults["is_active"] = True
-                for dk in ("monthly_price_usd", "width", "height", "hem_pocket_top_cm"):
-                    if dk in defaults:
-                        defaults[dk] = _dec(defaults[dk])
-                # No borrar campos si el parser no los encontró ("" o None).
-                for k in (
-                    "description",
-                    "material",
-                    "location_description",
-                    "level",
-                    "venue_zone",
-                    "production_specs",
-                    "installation_notes",
-                ):
-                    if k in defaults and (defaults[k] is None or str(defaults[k]).strip() == ""):
-                        defaults.pop(k, None)
-                # Si el parser no pudo inferir type, no lo sobrescribimos al actualizar.
-                if defaults.get("type") in ("", None):
-                    defaults.pop("type", None)
-                # monthly_price_usd es requerido para crear.
-                if "monthly_price_usd" not in defaults or defaults.get("monthly_price_usd") is None:
-                    raise CommandError(f"{code}: falta Canon mensual en el PDF (monthly_price_usd).")
-                ad, was_created = AdSpace.objects.update_or_create(code=code, defaults=defaults)
-                created_n += 1 if was_created else 0
-                updated_n += 0 if was_created else 1
-
-                # Imágenes opcionales: nombres de archivo tipo «TOMA n» en --images-dir.
-                paths: list[Path] = []
-                if images_dir is not None:
-                    paths = _collect_images_for_code(images_dir, code)
-                paths, skipped_img = _filter_seed_image_paths(paths)
-                for name in skipped_img:
-                    self.stdout.write(self.style.WARNING(f"{code}: omitido «{name}» (no imagen válida)."))
-                if paths:
-                    _apply_toma_gallery(ad, paths)
-                elif not allow_missing_images and images_dir is not None:
-                    raise CommandError(
-                        f"{code}: no se encontraron imágenes válidas en {images_dir} y está activo --require-images."
-                    )
-
-            now = timezone.now()
-            audit_updates: dict = {}
-            # Campos opcionales del workspace (slugs cortos convencionales, p. ej. scc/slc).
-            if center.slug == "scc":
-                audit_updates["catalog_scc_seeded_at"] = now
-            if center.slug == "slc":
-                audit_updates["catalog_slc_seeded_at"] = now
-            if ws.catalog_seed_feeder_id is None:
-                audit_updates["catalog_seed_feeder_id"] = feeder.pk
-            if audit_updates:
-                Workspace.objects.filter(pk=ws.pk).update(**audit_updates)
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Catálogo listo: {center_slug} · tomas={len(space_codes)} · creadas={created_n} · actualizadas={updated_n}."
-            )
+        _apply_parsed_catalog(
+            self,
+            ws,
+            parsed,
+            parse_ctx=parse_ctx,
+            options=options,
+            demo_mode=use_demo,
         )
