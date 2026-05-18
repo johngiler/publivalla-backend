@@ -40,18 +40,20 @@ def load_images_map(images_dir: Path) -> dict[str, str]:
 
 
 def _filename_patterns_for_space_code(code: str) -> list[re.Pattern[str]]:
+    """
+    ``PREFIX-T2A`` → archivos «TOMA 2A …»; ``PREFIX-T1`` → «TOMA 1 …» (no «TOMA 1A» ni «TOMA 10»).
+    """
     c = (code or "").strip().upper()
-    if re.fullmatch(r"[\w]+-T1$", c):
-        return [
-            re.compile(r"^TOMA\s*1A", re.IGNORECASE),
-            re.compile(r"^TOMA\s*1B", re.IGNORECASE),
-        ]
     m = re.match(r"^[\w]+-T(?P<n>\d{1,2})(?P<suf>[A-Z])?$", c)
     if not m:
         return []
     n = m.group("n")
-    suf = m.group("suf") or ""
-    return [re.compile(rf"^TOMA\s*{n}{suf}(?:[\s\._\(]|$)", re.IGNORECASE)]
+    suf = (m.group("suf") or "").upper()
+    if suf:
+        return [re.compile(rf"^TOMA\s*{n}{suf}(?:[\s\._\(]|$)", re.IGNORECASE)]
+    return [
+        re.compile(rf"^TOMA\s*{n}(?![0-9A-Z])(?:[\s\._\(]|$)", re.IGNORECASE),
+    ]
 
 
 def _sort_gallery_paths(paths: list[Path]) -> list[Path]:
@@ -76,7 +78,35 @@ def _images_in_dir(directory: Path) -> list[Path]:
     return _sort_gallery_paths(found)
 
 
-def _collect_flat_toma_files(images_dir: Path, code: str) -> list[Path]:
+def _normalize_match_text(value: str) -> str:
+    return (
+        (value or "")
+        .lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace("ü", "u")
+        .replace("ñ", "n")
+    )
+
+
+def _score_flat_filename_for_spec(filename: str, spec: dict | None) -> int:
+    """Prioriza archivos cuyo nombre comparte palabras con título/ubicación de la toma."""
+    if not spec:
+        return 0
+    blob = _normalize_match_text(_location_blob(spec))
+    if not blob:
+        return 0
+    name = _normalize_match_text(filename)
+    tokens = [t for t in re.split(r"[^a-z0-9]+", blob) if len(t) >= 4]
+    return sum(1 for t in tokens if t in name)
+
+
+def _collect_flat_toma_files(
+    images_dir: Path, code: str, *, spec: dict | None = None
+) -> list[Path]:
     patterns = _filename_patterns_for_space_code(code)
     if not patterns:
         return []
@@ -86,7 +116,16 @@ def _collect_flat_toma_files(images_dir: Path, code: str) -> list[Path]:
             continue
         if any(pat.search(p.name) for pat in patterns):
             found.append(p)
-    return _sort_gallery_paths(found)
+    if len(found) <= 1:
+        return _sort_gallery_paths(found)
+    scored = sorted(
+        found,
+        key=lambda p: (-_score_flat_filename_for_spec(p.name, spec), p.name.lower()),
+    )
+    best = _score_flat_filename_for_spec(scored[0].name, spec)
+    if best > 0:
+        scored = [p for p in scored if _score_flat_filename_for_spec(p.name, spec) > 0]
+    return _sort_gallery_paths(scored)
 
 
 def _toma_suffix_from_code(code: str) -> str | None:
@@ -217,7 +256,7 @@ def collect_images_for_code(
     images_map: dict[str, str] | None = None,
 ) -> list[Path]:
     """Devuelve rutas de imagen para una toma (planas ``TOMA n`` o subcarpeta)."""
-    flat = _collect_flat_toma_files(images_dir, code)
+    flat = _collect_flat_toma_files(images_dir, code, spec=spec)
     if flat:
         return flat
 
