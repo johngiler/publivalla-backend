@@ -171,8 +171,8 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     if not items:
         raise ValueError("El pedido no tiene líneas.")
     sc = items[0].ad_space.shopping_center
-    lessor = (sc.lessor_legal_name or "").strip() or "Constructora Acme, C.A."
-    lessor_rif = (sc.lessor_rif or "").strip() or "J-00008276-6"
+    lessor = (sc.lessor_legal_name or "").strip() or "Arrendador"
+    lessor_rif = (sc.lessor_rif or "").strip() or "—"
     center_name = sc.name
     tenant = client.company_name
     rif = (client.rif or "").strip() or "—"
@@ -404,8 +404,8 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     story.append(Paragraph("Quedo de usted, muy atentamente.",
                  ParagraphStyle("C", parent=body_st, alignment=TA_CENTER)))
     story.append(Spacer(1, 1.2 * cm))
-    lessor = (sc.lessor_legal_name or "").strip() or "Constructora Acme, C.A."
-    lessor_rif = (sc.lessor_rif or "").strip() or "J-00008276-6"
+    lessor = (sc.lessor_legal_name or "").strip() or "Arrendador"
+    lessor_rif = (sc.lessor_rif or "").strip() or "—"
     story.append(
         Paragraph(
             f"<b>Coordinación de Mercadeo</b><br/>{_escape(lessor)}<br/>RIF {_escape(lessor_rif)}",

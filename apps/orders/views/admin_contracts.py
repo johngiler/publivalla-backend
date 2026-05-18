@@ -28,7 +28,7 @@ def _contract_row_kind(*, order_status: str, start_date, end_date, today) -> str
 
 def _build_contracts_search_q(search: str) -> Q:
     raw = search.strip()
-    # Código de toma en BD suele ir sin espacios (p. ej. SLC-T5A); el usuario puede escribir «SLC - T5A».
+    # Código de toma en BD suele ir sin espacios (p. ej. DEMO-T5A); el usuario puede escribir «DEMO - T5A».
     code_compact = re.sub(r"\s+", "", raw)
     q = (
         Q(order__client__company_name__icontains=raw)

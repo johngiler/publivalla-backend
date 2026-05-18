@@ -113,7 +113,10 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
 
         if not prefix:
             slug = (center.slug or "").strip().upper()
-            parts = [p for p in slug.split("-") if p and p.lower() != "acme"]
+            ws_slug = (ws.slug if ws else "").strip().lower()
+            parts = [
+                p for p in slug.split("-") if p and (not ws_slug or p.lower() != ws_slug)
+            ]
             prefix = (parts[0] if parts else slug)[:5] or "SC"
 
         candidate = f"{prefix}-T{max_n + 1}"

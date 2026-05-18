@@ -10,7 +10,7 @@ Ejemplos::
 
     python manage.py seed_production_catalog --workspace-slug acme
     python manage.py seed_production_catalog --workspace-slug acme --demo-toma-count 10
-    python manage.py seed_production_catalog --workspace-slug sambil --pdf /ruta/catalogo.pdf
+    python manage.py seed_production_catalog --workspace-slug mi-tenant --pdf /ruta/catalogo.pdf
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from apps.common.utils.data_layout import catalog_seed_json_path
 from apps.ad_spaces.utils.gallery import sync_cover_from_gallery
 from apps.ad_spaces.models import AdSpace, AdSpaceImage, AdSpaceStatus
 from apps.malls.utils.catalog_demo_bundle import build_demo_catalog_bundle
+from apps.malls.utils.catalog_seed_images import collect_images_for_code, load_images_map
 from apps.malls.utils.catalog_pdf_parser import (
     CatalogPdfParseContext,
     ParsedCatalog,
@@ -41,9 +42,6 @@ from apps.malls.models import ShoppingCenter
 from apps.users.models import UserProfile
 from apps.workspaces.models import Workspace
 from apps.workspaces.utils.common import get_default_workspace
-
-_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-
 
 def _dec(value):
     """Convierte string/number a Decimal; deja None."""
@@ -153,22 +151,6 @@ def _rewrite_space_codes(spaces: list[dict], *, new_prefix: str) -> None:
         row["code"] = f"{new_prefix}-T{m.group('suf')}"
 
 
-def _filename_patterns_for_space_code(code: str) -> list[re.Pattern[str]]:
-    """Asocia códigos ``<PREFIJO>-Tn`` con nombres de archivo ``TOMA n`` en la carpeta de imágenes."""
-    c = (code or "").strip().upper()
-    if re.fullmatch(r"[\w]+-T1$", c):
-        return [
-            re.compile(r"^TOMA\s*1A", re.IGNORECASE),
-            re.compile(r"^TOMA\s*1B", re.IGNORECASE),
-        ]
-    m = re.match(r"^[\w]+-T(?P<n>\d{1,2})(?P<suf>[A-Z])?$", c)
-    if not m:
-        return []
-    n = m.group("n")
-    suf = m.group("suf") or ""
-    return [re.compile(rf"^TOMA\s*{n}{suf}(?:[\s\._\(]|$)", re.IGNORECASE)]
-
-
 def _is_readable_image_file(path: Path) -> bool:
     """True si el archivo es una imagen raster legible (Pillow); excluye vacíos y corruptos."""
     from PIL import Image, UnidentifiedImageError
@@ -195,38 +177,6 @@ def _filter_seed_image_paths(paths: list[Path]) -> tuple[list[Path], list[str]]:
         else:
             skipped.append(p.name)
     return valid, skipped
-
-
-def _sort_gallery_paths(paths: list[Path]) -> list[Path]:
-    """Orden: archivo base sin (n) primero; luego (1), (2), …; después orden alfabético del nombre."""
-
-    def sort_key(p: Path) -> tuple:
-        stem = p.stem
-        m = re.match(r"^(?P<base>.+)\((?P<idx>\d+)\)$", stem)
-        if m:
-            return (m.group("base").strip().lower(), 1, int(m.group("idx")))
-        return (stem.lower(), 0, 0)
-
-    return sorted(paths, key=sort_key)
-
-
-def _collect_images_for_code(images_dir: Path, code: str) -> list[Path]:
-    """Busca archivos de imagen cuyo nombre coincida con el código de toma (convención ``TOMA n``)."""
-    if not images_dir or not images_dir.is_dir():
-        return []
-    c = (code or "").strip()
-    if not c:
-        return []
-    patterns = _filename_patterns_for_space_code(c)
-    if not patterns:
-        return []
-    found: list[Path] = []
-    for p in images_dir.iterdir():
-        if not p.is_file() or p.suffix.lower() not in _IMAGE_SUFFIXES:
-            continue
-        if any(pat.search(p.name) for pat in patterns):
-            found.append(p)
-    return _sort_gallery_paths(found)
 
 
 def _first_marketplace_admin_for_workspace(ws: Workspace):
@@ -338,6 +288,7 @@ def _apply_parsed_catalog(
     images_dir = Path(images_raw).expanduser().resolve() if images_raw else None
     if images_dir is not None and not images_dir.is_dir():
         raise CommandError(f"No existe el directorio de imágenes: {images_dir}")
+    images_map = load_images_map(images_dir) if images_dir is not None else {}
 
     with transaction.atomic():
         c = parsed.center
@@ -389,7 +340,12 @@ def _apply_parsed_catalog(
 
             paths: list[Path] = []
             if images_dir is not None:
-                paths = _collect_images_for_code(images_dir, code)
+                paths = collect_images_for_code(
+                    images_dir,
+                    code,
+                    spec=spec,
+                    images_map=images_map,
+                )
             paths, skipped_img = _filter_seed_image_paths(paths)
             for name in skipped_img:
                 command.stdout.write(command.style.WARNING(f"{code}: omitido «{name}» (no imagen válida)."))
@@ -445,7 +401,10 @@ class Command(BaseCommand):
             "--images-dir",
             type=str,
             default="",
-            help="Carpeta con imágenes (opcional). Si faltan, se crean tomas sin galería/portada.",
+            help=(
+                "Carpeta con imágenes: archivos «TOMA n» en la raíz y/o subcarpetas con fotos. "
+                "Mapa opcional catalog-images-map.json (código → subcarpeta)."
+            ),
         )
         parser.add_argument(
             "--require-images",

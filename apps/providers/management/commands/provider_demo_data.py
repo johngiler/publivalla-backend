@@ -9,7 +9,7 @@ Uso::
     python manage.py provider_demo_data
     python manage.py provider_demo_data --workspace-slug acme
     python manage.py provider_demo_data --shopping-center-id 1
-    python manage.py provider_demo_data --shopping-center-slug scc
+    python manage.py provider_demo_data --shopping-center-slug demo
     python manage.py provider_demo_data --reset
 
 Requisitos: workspace existente y al menos un centro comercial en ese workspace (si no pasas

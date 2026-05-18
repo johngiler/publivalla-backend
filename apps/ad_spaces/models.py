@@ -36,7 +36,7 @@ class AdSpace(TimeStampedActiveModel):
         max_length=32,
         unique=True,
         db_index=True,
-        help_text="Código único de la toma: prefijo-T{número}[sufijo], ej. SCC-T1, SLC-T1A (el prefijo no depende del centro).",
+        help_text="Código único de la toma: prefijo-T{número}[sufijo], ej. DEMO-T1, CC-T2A (el prefijo no depende del centro).",
     )
     shopping_center = models.ForeignKey(
         "malls.ShoppingCenter",

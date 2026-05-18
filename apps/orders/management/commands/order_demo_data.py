@@ -11,7 +11,7 @@ Uso::
     python manage.py order_demo_data
     python manage.py order_demo_data --reset
     python manage.py order_demo_data --workspace-slug acme
-    python manage.py order_demo_data --workspace-slug sambil
+    python manage.py order_demo_data --workspace-slug mi-tenant
 
 Requisitos: workspace existente y al menos 4 tomas activas. El comando reparte fechas
 entre tomas para minimizar solapamientos; con 12+ tomas (catálogo demo por defecto) suele

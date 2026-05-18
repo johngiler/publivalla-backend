@@ -1,7 +1,7 @@
 """
 Nomenclatura de códigos de toma: prefijo único + «-T» + número + sufijo de letras opcional.
 El prefijo no tiene que coincidir con datos del centro comercial (cada toma tiene su propio código).
-Ejemplos: SCC-T1, ACME-T2, MI-VALLA-T1A.
+Ejemplos: DEMO-T1, ACME-T2, CC-T1A.
 """
 
 from __future__ import annotations
@@ -29,6 +29,6 @@ def validate_toma_code(code: str) -> str:
     if not _TOMA_CODE_RE.fullmatch(normalized):
         raise ValidationError(
             "El código debe tener un prefijo (letras, números, guiones o guiones bajos), "
-            "luego «-T», un número y, si aplica, letras finales (ej. SCC-T1, SLC-T1A)."
+            "luego «-T», un número y, si aplica, letras finales (ej. DEMO-T1, CC-T2A)."
         )
     return normalized
