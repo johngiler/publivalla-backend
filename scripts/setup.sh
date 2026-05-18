@@ -22,7 +22,6 @@ mkdir -p /home/git/backend /home/git/backend/media
 mkdir -p /home/git/backend /home/git/backend/data
 chown -R git:git /home/git
 chmod 755 /home/git /home/git/backend
-# Nginx lee /static y /media como www-data: grupo en esas carpetas + setgid (collectstatic hereda grupo).
 chown git:www-data /home/git/backend/media
 chown git:www-data /home/git/backend/data
 chmod 2775 /home/git/backend/media /home/git/backend/data
@@ -32,11 +31,92 @@ echo "[setup] Allowing nginx to read letsencrypt challenges..."
 mkdir -p /var/www/letsencrypt
 chown -R www-data:www-data /var/www/letsencrypt
 
-echo "[setup] Done. Next steps:"
-echo "  1. Copiar código del backend a /home/git/backend (clone o rsync inicial)"
-echo "  2. Copiar .env a /home/git/backend/.env"
-echo "  3. Copiar config/settings/local_settings.production.py -> /home/git/backend/config/settings/local_settings.py"
-echo "  4. Ejecutar scripts/init_db.sh (como root o postgres) para crear la base"
-echo "  5. Como git: cd /home/git/backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
-echo "  6. migrate y: .venv/bin/python manage.py ensure_default_workspace  (workspace placeholder acme)"
-echo "  7. Instalar certbot, luego scripts/nginx/api.publivalla.com.conf, scripts/systemd/publivalla-api.service y scripts/systemd/publivalla-celery.service"
+cat <<'EOF'
+
+[setup] Done. Siguientes pasos (ejecutar desde tu Mac / máquina de desarrollo).
+
+Requisito: en ~/.ssh/config debe existir el host «publivalla-api» apuntando al servidor.
+Ajusta LOCAL_BACKEND si tu repo no está en la ruta por defecto.
+
+──────────────────────────────────────────────────────────────────────────────
+0) Variables (opcional, para pegar bloques siguientes)
+──────────────────────────────────────────────────────────────────────────────
+LOCAL_BACKEND="/Users/jcgiler/BlackCubeTech/Publivalla/backend"
+REMOTE_HOST="publivalla-api"
+REMOTE_PATH="/home/git/backend"
+
+──────────────────────────────────────────────────────────────────────────────
+1) Rsync inicial del código (sin --delete; no pisa .env ni local_settings del servidor)
+──────────────────────────────────────────────────────────────────────────────
+cd "$LOCAL_BACKEND"
+
+rsync -avz \
+  --exclude '.venv' \
+  --exclude '__pycache__' \
+  --exclude '*.pyc' \
+  --exclude '.env' \
+  --exclude '.env.local' \
+  --exclude '.env.production' \
+  --exclude 'config/settings/local_settings.py' \
+  --exclude 'db.sqlite3' \
+  --exclude 'staticfiles' \
+  --exclude 'static' \
+  --exclude 'media' \
+  --exclude 'data' \
+  --exclude '.git' \
+  --exclude '.DS_Store' \
+  --exclude '*.log' \
+  -e ssh ./ "${REMOTE_HOST}:${REMOTE_PATH}/"
+
+ssh "${REMOTE_HOST}" "sudo chown -R git:git ${REMOTE_PATH} && sudo chmod 755 /home/git /home/git/backend && sudo chown git:www-data ${REMOTE_PATH}/media ${REMOTE_PATH}/data 2>/dev/null || true && sudo chmod 2775 ${REMOTE_PATH}/media ${REMOTE_PATH}/data 2>/dev/null || true"
+
+──────────────────────────────────────────────────────────────────────────────
+2) Secretos y settings de producción (desde tu máquina)
+──────────────────────────────────────────────────────────────────────────────
+# .env de producción (revisa valores antes de subir)
+scp "$LOCAL_BACKEND/.env.production" "${REMOTE_HOST}:${REMOTE_PATH}/.env"
+
+# Overrides Django (plantilla versionada en el repo)
+scp "$LOCAL_BACKEND/config/settings/local_settings.production.py" \
+  "${REMOTE_HOST}:${REMOTE_PATH}/config/settings/local_settings.py"
+
+ssh "${REMOTE_HOST}" "sudo chown git:git ${REMOTE_PATH}/.env ${REMOTE_PATH}/config/settings/local_settings.py && sudo chmod 640 ${REMOTE_PATH}/.env"
+
+──────────────────────────────────────────────────────────────────────────────
+3) Crear usuario y base Postgres (en el servidor; lee POSTGRES_* del .env)
+──────────────────────────────────────────────────────────────────────────────
+ssh "${REMOTE_HOST}" "sudo bash ${REMOTE_PATH}/scripts/init_db.sh"
+
+──────────────────────────────────────────────────────────────────────────────
+4) Venv e dependencias Python (usuario git en el servidor)
+──────────────────────────────────────────────────────────────────────────────
+ssh "${REMOTE_HOST}" "sudo -u git bash -lc 'cd ${REMOTE_PATH} && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt'"
+
+──────────────────────────────────────────────────────────────────────────────
+5) Migraciones, workspace por defecto y estáticos del admin
+──────────────────────────────────────────────────────────────────────────────
+ssh "${REMOTE_HOST}" "sudo -u git bash -lc 'cd ${REMOTE_PATH} && .venv/bin/python manage.py migrate --noinput && .venv/bin/python manage.py ensure_default_workspace && .venv/bin/python manage.py collectstatic --noinput'"
+
+ssh "${REMOTE_HOST}" "sudo chown -R git:www-data ${REMOTE_PATH}/staticfiles && sudo find ${REMOTE_PATH}/staticfiles -type d -exec chmod 2775 {} \\; && sudo find ${REMOTE_PATH}/staticfiles -type f -exec chmod 664 {} \\;"
+
+──────────────────────────────────────────────────────────────────────────────
+6) Nginx + systemd (en el servidor; DNS de api.publivalla.com debe apuntar al host)
+──────────────────────────────────────────────────────────────────────────────
+ssh "${REMOTE_HOST}" "sudo cp ${REMOTE_PATH}/scripts/nginx/api.publivalla.com.conf /etc/nginx/sites-available/api.publivalla.com.conf && sudo ln -sf /etc/nginx/sites-available/api.publivalla.com.conf /etc/nginx/sites-enabled/api.publivalla.com.conf && sudo nginx -t && sudo systemctl reload nginx"
+
+ssh "${REMOTE_HOST}" "sudo cp ${REMOTE_PATH}/scripts/systemd/publivalla-api.service /etc/systemd/system/ && sudo cp ${REMOTE_PATH}/scripts/systemd/publivalla-celery.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now publivalla-api publivalla-celery"
+
+# TLS (solo cuando el vhost responde en HTTP y el DNS está propagado)
+ssh "${REMOTE_HOST}" "sudo certbot --nginx -d api.publivalla.com"
+
+──────────────────────────────────────────────────────────────────────────────
+7) Cron de tareas (hold 72h, vencimiento de contratos, etc.)
+──────────────────────────────────────────────────────────────────────────────
+ssh "${REMOTE_HOST}" "sudo -u git mkdir -p ${REMOTE_PATH}/logs && sudo cp ${REMOTE_PATH}/scripts/crond/publivalla-backend.crontab /etc/cron.d/publivalla-backend && sudo chmod 644 /etc/cron.d/publivalla-backend"
+
+──────────────────────────────────────────────────────────────────────────────
+Deploys siguientes (solo código; usa --delete; ver scripts/deploy.sh)
+──────────────────────────────────────────────────────────────────────────────
+cd "$LOCAL_BACKEND" && ./scripts/deploy.sh
+
+EOF

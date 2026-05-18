@@ -7,6 +7,11 @@ from apps.common.utils.media_layout import shopping_center_cover_upload
 from apps.common.models import TimeStampedActiveModel
 
 
+class RentalBillingUnit(models.TextChoices):
+    CALENDAR_MONTH = "calendar_month", "Por mes de calendario"
+    CALENDAR_DAY = "calendar_day", "Por día de calendario"
+
+
 class ShoppingCenter(TimeStampedActiveModel):
     workspace = models.ForeignKey(
         "workspaces.Workspace",
@@ -95,6 +100,15 @@ class ShoppingCenter(TimeStampedActiveModel):
         decimal_places=2,
         default=Decimal("1.00"),
         help_text="Factor sobre el canon mensual en meses de temporada alta (1.25 = +25 %).",
+    )
+    rental_billing_unit = models.CharField(
+        max_length=20,
+        choices=RentalBillingUnit.choices,
+        default=RentalBillingUnit.CALENDAR_MONTH,
+        help_text=(
+            "Cómo se cotiza y reserva en marketplace: meses de calendario o días "
+            "(canon diario = mensual ÷ 30)."
+        ),
     )
 
     class Meta:

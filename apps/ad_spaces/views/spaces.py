@@ -11,12 +11,12 @@ from apps.ad_spaces.serializers import (
     MOUNTING_PROVIDERS_PAGE_SIZE,
 )
 from apps.providers.models import MountingProvider
-from apps.orders.utils.validators import (
-    MIN_RESERVATION_CALENDAR_MONTHS,
-    contract_months_inclusive,
-    order_item_conflicts,
-    rental_start_allowed_for_marketplace,
+from apps.orders.utils.rental_billing import (
+    min_units_label,
+    rental_start_allowed,
+    total_billed_units,
 )
+from apps.orders.utils.validators import order_item_conflicts
 from apps.workspaces.tenant import get_workspace_for_request
 
 _EMPTY_CITY_SENTINEL = "__empty__"
@@ -128,8 +128,10 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                 },
                 status=200,
             )
+        center = space.shopping_center
+        unit = center.rental_billing_unit
         title = (space.title or "").strip() or "esta toma"
-        total_months = 0
+        total_units = 0
         for seg in segments:
             start = seg["start_date"]
             end = seg["end_date"]
@@ -141,14 +143,18 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                     },
                     status=200,
                 )
-            total_months += contract_months_inclusive(start, end)
-            if not rental_start_allowed_for_marketplace(start):
+            total_units += total_billed_units(unit, start, end)
+            if not rental_start_allowed(unit, start):
                 return Response(
                     {
                         "ok": False,
                         "detail": (
-                            "No puedes reservar desde un mes pasado ni desde el mes en curso. "
-                            "Elige un inicio a partir del próximo mes."
+                            "La fecha de inicio no puede ser hoy ni un día pasado."
+                            if unit == "calendar_day"
+                            else (
+                                "No puedes reservar desde un mes pasado ni desde el mes en curso. "
+                                "Elige un inicio a partir del próximo mes."
+                            )
                         ),
                     },
                     status=200,
@@ -161,14 +167,12 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                     },
                     status=200,
                 )
-        m = MIN_RESERVATION_CALENDAR_MONTHS
-        if total_months < m:
+        n_min, label = min_units_label(unit)
+        if total_units < n_min:
             return Response(
                 {
                     "ok": False,
-                    "detail": (
-                        f"Elige al menos {m} {'mes' if m == 1 else 'meses'} en total."
-                    ),
+                    "detail": f"Elige al menos {n_min} {label} en total.",
                 },
                 status=200,
             )

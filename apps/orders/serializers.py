@@ -800,7 +800,9 @@ class OrderInstallationPermitWriteSerializer(serializers.Serializer):
 class OrderItemWriteSerializer(serializers.Serializer):
     """Solo espacio y fechas; precio y subtotal los fija el servidor."""
 
-    ad_space = serializers.PrimaryKeyRelatedField(queryset=AdSpace.objects.all())
+    ad_space = serializers.PrimaryKeyRelatedField(
+        queryset=AdSpace.objects.select_related("shopping_center").all()
+    )
     start_date = serializers.DateField()
     end_date = serializers.DateField()
 
@@ -811,17 +813,36 @@ class OrderItemWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"end_date": "La fecha fin debe ser posterior o igual al inicio."}
             )
-        if not contract_meets_min_months(start, end):
-            m = MIN_RESERVATION_CALENDAR_MONTHS
+        ad = data["ad_space"]
+        center = ad.shopping_center
+        from apps.orders.utils.rental_billing import (
+            contract_meets_minimum,
+            line_subtotal_for_center,
+            min_units_label,
+            rental_start_allowed,
+        )
+
+        unit = center.rental_billing_unit
+        if not contract_meets_minimum(unit, start, end):
+            n, label = min_units_label(unit)
             raise serializers.ValidationError(
                 {
                     "end_date": (
-                        f"El contrato debe cubrir al menos {m} "
-                        f"{'mes' if m == 1 else 'meses'} de calendario."
+                        f"El período debe cubrir al menos {n} {label}."
                     )
                 }
             )
-        ad = data["ad_space"]
+        if not rental_start_allowed(unit, start):
+            raise serializers.ValidationError(
+                {
+                    "start_date": (
+                        "La fecha de inicio no puede ser hoy ni un día pasado. "
+                        "Elige una fecha futura válida."
+                        if unit == "calendar_day"
+                        else "No puedes reservar desde un mes pasado ni desde el mes en curso."
+                    )
+                }
+            )
         if not ad_space_allows_marketplace_reservation(ad):
             raise serializers.ValidationError(
                 {
@@ -832,12 +853,8 @@ class OrderItemWriteSerializer(serializers.Serializer):
                 }
             )
         monthly = ad.monthly_price_usd
-        from apps.malls.utils.high_season import line_subtotal_with_high_season
-
         data["_monthly_price"] = monthly
-        data["_subtotal"] = line_subtotal_with_high_season(
-            monthly, ad.shopping_center, start, end
-        )
+        data["_subtotal"] = line_subtotal_for_center(monthly, center, start, end)
         return data
 
 

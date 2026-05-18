@@ -50,6 +50,10 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     )
     high_season_months = serializers.SerializerMethodField(read_only=True)
     high_season_multiplier = serializers.SerializerMethodField(read_only=True)
+    rental_billing_unit = serializers.CharField(
+        source="shopping_center.rental_billing_unit",
+        read_only=True,
+    )
 
     class Meta:
         model = AdSpace
@@ -90,6 +94,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "advertising_regulations",
             "high_season_months",
             "high_season_multiplier",
+            "rental_billing_unit",
         )
         read_only_fields = ("status",)
 

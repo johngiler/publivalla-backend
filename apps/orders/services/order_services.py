@@ -84,23 +84,35 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
     if order.status != OrderStatus.DRAFT:
         raise serializers.ValidationError({"detail": "Solo se pueden enviar órdenes en borrador."})
 
-    for item in order.items.select_related("ad_space"):
-        if not rental_start_allowed_for_marketplace(item.start_date):
+    from apps.orders.utils.rental_billing import (
+        contract_meets_minimum,
+        line_subtotal_for_center,
+        min_units_label,
+        rental_start_allowed,
+    )
+
+    for item in order.items.select_related("ad_space", "ad_space__shopping_center"):
+        center = item.ad_space.shopping_center
+        unit = center.rental_billing_unit
+        if not rental_start_allowed(unit, item.start_date):
             raise serializers.ValidationError(
                 {
                     "detail": (
-                        "La fecha de inicio no puede caer en un mes pasado ni en el mes en curso. "
-                        "Elige un período que comience desde el próximo mes."
+                        "La fecha de inicio no puede ser hoy ni un día pasado."
+                        if unit == "calendar_day"
+                        else (
+                            "La fecha de inicio no puede caer en un mes pasado ni en el mes en curso. "
+                            "Elige un período que comience desde el próximo mes."
+                        )
                     ),
                 }
             )
-        if not contract_meets_min_months(item.start_date, item.end_date):
-            m = MIN_RESERVATION_CALENDAR_MONTHS
+        if not contract_meets_minimum(unit, item.start_date, item.end_date):
+            n, label = min_units_label(unit)
             raise serializers.ValidationError(
                 {
                     "detail": (
-                        f"La línea {item.ad_space.code} no cumple el mínimo de "
-                        f"{m} {'mes' if m == 1 else 'meses'} de calendario."
+                        f"La línea {item.ad_space.code} no cumple el mínimo de {n} {label}."
                     ),
                 }
             )
@@ -128,11 +140,10 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
             )
 
     total = Decimal("0")
-    from apps.malls.utils.high_season import line_subtotal_with_high_season
 
     for item in order.items.select_related("ad_space", "ad_space__shopping_center"):
         monthly = item.ad_space.monthly_price_usd
-        sub = line_subtotal_with_high_season(
+        sub = line_subtotal_for_center(
             monthly,
             item.ad_space.shopping_center,
             item.start_date,
