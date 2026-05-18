@@ -1,5 +1,5 @@
 """
-Genera clientes y pedidos realistas para el workspace «acme» (previsualizar dashboards).
+Genera clientes y pedidos realistas en un workspace (previsualizar dashboards).
 
 - No modifica centros, tomas ni usuarios.
 - Cinco empresas cliente (sin usuarios vinculados); RIF fijos para idempotencia con --reset.
@@ -8,9 +8,10 @@ Genera clientes y pedidos realistas para el workspace «acme» (previsualizar da
 
 Uso::
 
-    python manage.py seed_demo_data
-    python manage.py seed_demo_data --reset
-    python manage.py seed_demo_data --workspace-slug acme
+    python manage.py order_demo_data
+    python manage.py order_demo_data --reset
+    python manage.py order_demo_data --workspace-slug acme
+    python manage.py order_demo_data --workspace-slug sambil
 
 Requisitos: workspace existente y tomas en catálogo suficientes para colocar contratos
 según la duración mínima de reserva, sin solaparse con reservas ya existentes en pipeline.
@@ -168,7 +169,7 @@ def _emit_status_chain(order: Order, statuses: list[str], t0: datetime, rng: ran
 
 class Command(BaseCommand):
     help = (
-        "Crea clientes y pedidos de demostración realistas para el workspace acme "
+        "Crea clientes y pedidos de demostración realistas en un workspace "
         "(gráficas del panel admin). No altera centros, tomas ni usuarios."
     )
 
@@ -191,7 +192,10 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        slug = (options["workspace_slug"] or "acme").strip().lower()
+        slug = (options["workspace_slug"] or "").strip().lower()
+        if not slug:
+            raise CommandError("Indica un --workspace-slug válido.")
+
         reset = bool(options["reset"])
         rng = random.Random(int(options["seed"]))
 
@@ -298,7 +302,7 @@ class Command(BaseCommand):
                     (rng.randint(0, 8), OrderStatus.INSTALLATION, 14, 6),
                     (rng.randint(2, 22), OrderStatus.CANCELLED, 60, 6),
                     (rng.randint(2, 24), OrderStatus.CANCELLED, 90, 5),
-                    (rng.randint(1, 20), OrderStatus.CANCELLED, 50, 5),
+                    (rng.randint(2, 24), OrderStatus.CANCELLED, 50, 5),
                 ]
             )
 

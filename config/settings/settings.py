@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "apps.workspaces.apps.WorkspacesConfig",
     "apps.users.apps.UsersConfig",
     "apps.malls.apps.MallsConfig",
+    "apps.providers.apps.ProvidersConfig",
     "apps.ad_spaces.apps.AdSpacesConfig",
     "apps.availability.apps.AvailabilityConfig",
     "apps.clients.apps.ClientsConfig",

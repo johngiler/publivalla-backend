@@ -1,52 +1,7 @@
 from rest_framework import serializers
 
-from apps.malls.models import ShoppingCenter, ShoppingCenterMountingProvider
-from apps.workspaces.tenant import get_workspace_for_request
-
-
-class MountingProviderSerializer(serializers.ModelSerializer):
-    shopping_center_name = serializers.CharField(
-        source="shopping_center.name", read_only=True
-    )
-
-    class Meta:
-        model = ShoppingCenterMountingProvider
-        fields = (
-            "id",
-            "shopping_center",
-            "shopping_center_name",
-            "company_name",
-            "contact_name",
-            "phone",
-            "email",
-            "rif",
-            "notes",
-            "sort_order",
-            "is_active",
-            "created_at",
-            "updated_at",
-        )
-        extra_kwargs = {
-            "shopping_center": {"required": True},
-            "contact_name": {"required": False, "allow_blank": True},
-            "phone": {"required": False, "allow_blank": True},
-            "email": {"required": False, "allow_blank": True},
-            "rif": {"required": False, "allow_blank": True},
-            "notes": {"required": False, "allow_blank": True},
-            "created_at": {"read_only": True},
-            "updated_at": {"read_only": True},
-        }
-
-    def validate_shopping_center(self, value):
-        request = self.context.get("request")
-        if not request:
-            return value
-        ws = get_workspace_for_request(request)
-        if ws is not None and value.workspace_id != ws.id:
-            raise serializers.ValidationError(
-                "El centro comercial no pertenece a tu espacio de trabajo."
-            )
-        return value
+from apps.malls.models import ShoppingCenter
+from apps.providers.serializers import MountingProviderSerializer
 
 
 class ShoppingCenterSerializer(serializers.ModelSerializer):

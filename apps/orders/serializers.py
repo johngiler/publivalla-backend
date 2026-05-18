@@ -16,7 +16,8 @@ from apps.orders.models import (
     OrderStatus,
     OrderStatusEvent,
 )
-from apps.malls.models import ShoppingCenter, ShoppingCenterMountingProvider
+from apps.malls.models import ShoppingCenter
+from apps.providers.models import MountingProvider
 from apps.orders.services import default_invoice_number_for_order, log_order_status_transition
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
@@ -729,11 +730,12 @@ class ClientMountingProviderCreateSerializer(serializers.Serializer):
                 {"shopping_center": "Ese centro no forma parte de las líneas de este pedido."}
             )
         name = attrs["company_name"]
-        if ShoppingCenterMountingProvider.objects.filter(
-            shopping_center=center,
+        existing = MountingProvider.objects.filter(
+            workspace_id=center.workspace_id,
             company_name__iexact=name,
             is_active=True,
-        ).exists():
+        ).first()
+        if existing is not None and existing.shopping_centers.filter(pk=center.pk).exists():
             raise serializers.ValidationError(
                 {
                     "company_name": (
@@ -742,6 +744,7 @@ class ClientMountingProviderCreateSerializer(serializers.Serializer):
                     )
                 }
             )
+        attrs["_existing_provider"] = existing
         return attrs
 
 

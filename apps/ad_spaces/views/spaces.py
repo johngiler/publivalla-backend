@@ -10,7 +10,7 @@ from apps.ad_spaces.serializers import (
     CatalogMountingProviderSerializer,
     MOUNTING_PROVIDERS_PAGE_SIZE,
 )
-from apps.malls.models import ShoppingCenterMountingProvider
+from apps.providers.models import MountingProvider
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     contract_meets_min_months,
@@ -75,7 +75,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             "gallery_images",
             Prefetch(
                 "shopping_center__mounting_providers",
-                queryset=ShoppingCenterMountingProvider.objects.filter(is_active=True).order_by(
+                queryset=MountingProvider.objects.filter(is_active=True).order_by(
                     "sort_order", "id"
                 ),
             ),
@@ -140,10 +140,10 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
     def mounting_providers(self, request, pk=None):
         """Proveedores de montaje del centro de la toma, paginados (page_size por defecto 5)."""
         space = self.get_object()
-        qs = ShoppingCenterMountingProvider.objects.filter(
-            shopping_center_id=space.shopping_center_id,
+        qs = MountingProvider.objects.filter(
+            shopping_centers=space.shopping_center_id,
             is_active=True,
-        ).order_by("sort_order", "id")
+        ).order_by("sort_order", "id").distinct()
         paginator = CatalogMountingProvidersPagination()
         page = paginator.paginate_queryset(qs, request, view=self)
         ser = CatalogMountingProviderSerializer(

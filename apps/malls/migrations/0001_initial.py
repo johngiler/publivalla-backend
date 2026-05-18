@@ -48,26 +48,6 @@ class Migration(migrations.Migration):
                 'ordering': ['listing_order', 'slug'],
             },
         ),
-        migrations.CreateModel(
-            name='ShoppingCenterMountingProvider',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
-                ('updated_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('is_active', models.BooleanField(db_index=True, default=True, help_text='Si está desmarcado, el registro se considera inactivo (no borrado).')),
-                ('company_name', models.CharField(max_length=255)),
-                ('contact_name', models.CharField(blank=True, default='', max_length=255)),
-                ('phone', models.CharField(blank=True, default='', max_length=64)),
-                ('email', models.EmailField(blank=True, default='', max_length=254)),
-                ('rif', models.CharField(blank=True, default='', max_length=32)),
-                ('notes', models.TextField(blank=True, default='')),
-                ('sort_order', models.PositiveSmallIntegerField(default=0)),
-                ('shopping_center', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='mounting_providers', to='malls.shoppingcenter')),
-            ],
-            options={
-                'ordering': ['sort_order', 'id'],
-            },
-        ),
         migrations.AddConstraint(
             model_name='shoppingcenter',
             constraint=models.UniqueConstraint(fields=('workspace', 'slug'), name='malls_shoppingcenter_workspace_slug_uniq'),

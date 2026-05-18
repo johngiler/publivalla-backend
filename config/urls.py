@@ -18,11 +18,8 @@ from apps.clients.views import (
     MyFavoriteDetailView,
     MyFavoritesView,
 )
-from apps.malls.views import (
-    MountingProviderAdminViewSet,
-    ShoppingCenterAdminViewSet,
-    ShoppingCenterViewSet,
-)
+from apps.malls.views import ShoppingCenterAdminViewSet, ShoppingCenterViewSet
+from apps.providers.views import MountingProviderAdminViewSet
 from apps.orders.views import (
     AdminMarketplaceContractsView,
     GuestCheckoutClientEmailCheckView,

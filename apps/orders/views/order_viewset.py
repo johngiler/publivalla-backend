@@ -15,8 +15,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.ad_spaces.models import AdSpaceImage
-from apps.malls.models import ShoppingCenterMountingProvider
-from apps.malls.serializers import MountingProviderSerializer
+from apps.providers.models import MountingProvider
+from apps.providers.serializers import MountingProviderSerializer
 from apps.orders.models import Order, OrderArtAttachment, OrderInstallationPermit, OrderItem, OrderStatus
 from apps.orders.serializers import (
     ClientMountingProviderCreateSerializer,
@@ -583,12 +583,13 @@ class OrderViewSet(
             if not center_ids:
                 return Response([])
             qs = (
-                ShoppingCenterMountingProvider.objects.filter(
-                    shopping_center_id__in=center_ids,
+                MountingProvider.objects.filter(
+                    shopping_centers__in=center_ids,
                     is_active=True,
                 )
-                .select_related("shopping_center")
-                .order_by("shopping_center_id", "sort_order", "id")
+                .prefetch_related("shopping_centers")
+                .order_by("sort_order", "id")
+                .distinct()
             )
             data = MountingProviderSerializer(
                 qs, many=True, context=self.get_serializer_context()
@@ -616,11 +617,18 @@ class OrderViewSet(
         )
         ser.is_valid(raise_exception=True)
         vd = ser.validated_data
-        created = ShoppingCenterMountingProvider.objects.create(
-            shopping_center=vd["shopping_center"],
-            company_name=vd["company_name"],
-            sort_order=0,
-        )
+        center = vd["shopping_center"]
+        existing = vd.get("_existing_provider")
+        if existing is not None:
+            existing.shopping_centers.add(center)
+            created = existing
+        else:
+            created = MountingProvider.objects.create(
+                workspace_id=center.workspace_id,
+                company_name=vd["company_name"],
+                sort_order=0,
+            )
+            created.shopping_centers.add(center)
         out = MountingProviderSerializer(
             created, context=self.get_serializer_context()
         ).data

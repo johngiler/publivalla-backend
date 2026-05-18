@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.common.utils.image_webp import ensure_imagefields_webp
 from apps.common.utils.media_layout import user_profile_cover_upload
 
 
@@ -59,6 +60,13 @@ class UserProfile(models.Model):
 
     class Meta:
         ordering = ["user_id"]
+
+    def save(self, *args, **kwargs):
+        _webp_fields = ("cover_image",)
+        _uf = kwargs.get("update_fields")
+        if _uf is None or any(f in _uf for f in _webp_fields):
+            ensure_imagefields_webp(self, _webp_fields)
+        return super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()

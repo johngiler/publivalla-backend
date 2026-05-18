@@ -21,7 +21,8 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.malls.models import ShoppingCenter, ShoppingCenterMountingProvider
+from apps.malls.models import ShoppingCenter
+from apps.providers.models import MountingProvider
 from apps.workspaces.models import Workspace
 
 SEED_TAG = "provider_demo_data"
@@ -152,7 +153,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--reset",
             action="store_true",
-            help=f"Elimina en ese centro los proveedores cuyo nombre empieza por «{COMPANY_PREFIX} ».",
+            help=f"Elimina en el workspace los proveedores DEMO cuyo nombre empieza por «{COMPANY_PREFIX} ».",
         )
 
     def handle(self, *args, **options):
@@ -172,13 +173,15 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             if options["reset"]:
-                deleted, _ = ShoppingCenterMountingProvider.objects.filter(
-                    shopping_center=center,
+                demo_qs = MountingProvider.objects.filter(
+                    workspace=ws,
                     company_name__startswith=f"{COMPANY_PREFIX} ",
-                ).delete()
+                )
+                deleted = demo_qs.count()
+                demo_qs.delete()
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Eliminados {deleted} proveedor(es) DEMO del centro «{center.name}» (id={center.pk})."
+                        f"Eliminados {deleted} proveedor(es) DEMO del workspace «{ws.slug}»."
                     )
                 )
 
@@ -190,8 +193,8 @@ class Command(BaseCommand):
                     f"Datos de demostración ({SEED_TAG}). "
                     "Puedes borrarlos con: python manage.py provider_demo_data --reset …"
                 )
-                _obj, created = ShoppingCenterMountingProvider.objects.get_or_create(
-                    shopping_center=center,
+                provider, created = MountingProvider.objects.get_or_create(
+                    workspace=ws,
                     company_name=company_name,
                     defaults={
                         "contact_name": row["contact_name"],
@@ -203,10 +206,17 @@ class Command(BaseCommand):
                         "is_active": True,
                     },
                 )
+                already_linked = provider.shopping_centers.filter(pk=center.pk).exists()
+                if not already_linked:
+                    provider.shopping_centers.add(center)
                 if created:
                     created_n += 1
-                    self.stdout.write(self.style.SUCCESS(
-                        f"Creado: {company_name}"))
+                    self.stdout.write(self.style.SUCCESS(f"Creado: {company_name}"))
+                elif not already_linked:
+                    created_n += 1
+                    self.stdout.write(
+                        self.style.SUCCESS(f"Vinculado a {center.slug!r}: {company_name}")
+                    )
                 else:
                     skipped_n += 1
                     self.stdout.write(f"Ya existía (omitido): {company_name}")

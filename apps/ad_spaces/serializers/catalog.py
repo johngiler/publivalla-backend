@@ -6,25 +6,10 @@ from apps.ad_spaces.utils.availability_calendar import year_months_occupied
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
-from apps.malls.models import ShoppingCenterMountingProvider
+from apps.providers.models import MountingProvider
+from apps.providers.serializers import CatalogMountingProviderSerializer
 
 MOUNTING_PROVIDERS_PAGE_SIZE = 3
-
-
-class CatalogMountingProviderSerializer(serializers.ModelSerializer):
-    """Campos públicos del proveedor de montaje (catálogo / detalle de toma)."""
-
-    class Meta:
-        model = ShoppingCenterMountingProvider
-        fields = (
-            "id",
-            "company_name",
-            "contact_name",
-            "phone",
-            "email",
-            "rif",
-            "notes",
-        )
 
 
 class AdSpaceSerializer(serializers.ModelSerializer):
@@ -105,14 +90,19 @@ class AdSpaceSerializer(serializers.ModelSerializer):
 
     def get_mounting_providers(self, obj):
         sc = obj.shopping_center
-        rows: list[ShoppingCenterMountingProvider]
+        rows: list[MountingProvider]
         cache = getattr(sc, "_prefetched_objects_cache", None)
         if cache is not None and "mounting_providers" in cache:
             rows = [p for p in cache["mounting_providers"] if p.is_active]
             rows.sort(key=lambda p: (p.sort_order, p.id))
         else:
             rows = list(
-                sc.mounting_providers.filter(is_active=True).order_by("sort_order", "id")
+                MountingProvider.objects.filter(
+                    shopping_centers=sc,
+                    is_active=True,
+                )
+                .order_by("sort_order", "id")
+                .distinct()
             )
         total = len(rows)
         page_rows = rows[:MOUNTING_PROVIDERS_PAGE_SIZE]
