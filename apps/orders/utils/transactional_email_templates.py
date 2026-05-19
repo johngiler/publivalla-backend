@@ -18,7 +18,7 @@ from typing import Literal
 from apps.orders.utils.email_transactional_logo import (
     prepare_workspace_logo_for_transactional_email,
 )
-from apps.workspaces.utils.email_inline_logo import TENANT_TRANSACTIONAL_EMAIL_LOGO_CID
+from apps.workspaces.utils.email_inline_logo import workspace_email_logo_inline_filename
 
 OrderStatusAudience = Literal[
     "client",
@@ -57,7 +57,7 @@ def _render_transactional_shell(
 ) -> str:
     alt = _safe(tenant_logo_alt or "Marketplace")
     logo_block = (
-        f'<img src="cid:{TENANT_TRANSACTIONAL_EMAIL_LOGO_CID}" width="200" alt="{alt}" '
+        f'<img src="cid:{workspace_email_logo_inline_filename()}" width="200" alt="{alt}" '
         'style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;">'
         if has_tenant_logo_inline
         else (

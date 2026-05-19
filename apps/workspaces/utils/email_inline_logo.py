@@ -9,8 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Debe coincidir con el ``src="cid:…"`` del HTML generado en plantillas de pedidos/activación.
+# Base del identificador; el adjunto y el ``cid:`` en HTML usan sufijo ``.png`` (Mailgun exige coincidencia exacta).
 TENANT_TRANSACTIONAL_EMAIL_LOGO_CID = "tenant-email-logo"
+
+
+def workspace_email_logo_inline_filename() -> str:
+    """Nombre del adjunto inline; debe coincidir con ``src="cid:…"`` en el HTML."""
+    return f"{TENANT_TRANSACTIONAL_EMAIL_LOGO_CID}.png"
 
 
 def prepare_workspace_email_logo_for_inline(ws) -> tuple[bytes, str, str] | None:
@@ -38,5 +43,4 @@ def prepare_workspace_email_logo_for_inline(ws) -> tuple[bytes, str, str] | None
         return None
     if not raw:
         return None
-    disposition_name = path.name or "workspace-logo-email.png"
-    return (raw, disposition_name, "image/png")
+    return (raw, workspace_email_logo_inline_filename(), "image/png")

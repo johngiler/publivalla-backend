@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import cast
+from urllib.parse import urlencode
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
@@ -25,7 +26,7 @@ from apps.orders.utils.transactional_email_templates import (
     build_order_client_activity_admin_email,
     build_order_status_transactional_email,
 )
-from apps.workspaces.utils.email_inline_logo import TENANT_TRANSACTIONAL_EMAIL_LOGO_CID
+from apps.workspaces.utils.email_inline_logo import workspace_email_logo_inline_filename
 from apps.users.models import UserProfile
 from apps.workspaces.tenant import spa_public_base_url
 
@@ -36,17 +37,28 @@ _CLIENT_ACTIVITY_KEYS = frozenset(
 )
 
 
+def _order_reference_for_list_filter(order: Order) -> str:
+    """Referencia pública del pedido para ``?search=`` (cliente) o ``?q=`` (panel admin)."""
+    return (order.code or "").strip().lstrip("#")
+
+
 def _order_client_orders_url(order: Order) -> str:
-    """Vista «Mis pedidos» del marketplace (cuenta cliente)."""
+    """Vista «Mis pedidos» del marketplace (cuenta cliente), filtrada por referencia si existe."""
     ws = getattr(getattr(order, "client", None), "workspace", None)
     base = spa_public_base_url(ws)
+    ref = _order_reference_for_list_filter(order)
+    if ref:
+        return f"{base}/cuenta/pedidos?{urlencode({'search': ref})}"
     return f"{base}/cuenta/pedidos"
 
 
 def _order_admin_orders_url(order: Order) -> str:
-    """Sección Pedidos del panel de administración del mismo tenant."""
+    """Sección Pedidos del panel admin del mismo tenant, filtrada por referencia si existe."""
     ws = getattr(getattr(order, "client", None), "workspace", None)
     base = spa_public_base_url(ws)
+    ref = _order_reference_for_list_filter(order)
+    if ref:
+        return f"{base}/dashboard/pedidos?{urlencode({'q': ref})}"
     return f"{base}/dashboard/pedidos"
 
 
@@ -226,8 +238,9 @@ def _mime_part_workspace_inline_logo(
     else:
         logger.warning("MIME de logo inline no soportado: %s", ctype)
         return None
-    part.add_header("Content-ID", f"<{TENANT_TRANSACTIONAL_EMAIL_LOGO_CID}>")
-    part.add_header("Content-Disposition", "inline", filename=filename)
+    cid_name = workspace_email_logo_inline_filename()
+    part.add_header("Content-ID", f"<{cid_name}>")
+    part.add_header("Content-Disposition", "inline", filename=cid_name)
     return part
 
 
