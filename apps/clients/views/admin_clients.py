@@ -1,6 +1,3 @@
-from urllib.parse import quote
-
-from django.contrib.auth import get_user_model
 from django.db.models import Count, Prefetch, Q
 from rest_framework import status
 from rest_framework.decorators import action
@@ -10,19 +7,19 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.clients.models import Client
-from apps.clients.utils.notifications import client_has_marketplace_user
+from apps.clients.utils.marketplace_user import (
+    MarketplaceUserError,
+    build_client_registration_link_parts,
+    create_marketplace_user_for_client,
+)
 from apps.clients.serializers import (
     ClientAdminSerializer,
     MyCompanySerializer,
 )
-from apps.users.serializers import revoke_django_privileges
-from apps.users.views.base_viewsets import AdminModelViewSet
 from apps.users.models import UserProfile
-from apps.users.utils.password_setup_tokens import build_user_password_setup_token
+from apps.users.views.base_viewsets import AdminModelViewSet
 from apps.users.utils import get_marketplace_client, user_is_admin
 from apps.workspaces.tenant import enforce_workspace_for_non_superuser, get_workspace_for_request
-
-User = get_user_model()
 
 
 class ClientViewSet(AdminModelViewSet):
@@ -99,47 +96,32 @@ class ClientViewSet(AdminModelViewSet):
         Respuesta incluye token y datos para armar el enlace `/registro?...` en el front.
         """
         client = self.get_object()
-        if client_has_marketplace_user(client):
-            return Response(
-                {
-                    "detail": "Esta empresa ya tiene al menos un usuario vinculado.",
-                    "code": "already_linked",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+        try:
+            user = create_marketplace_user_for_client(client)
+        except MarketplaceUserError as exc:
+            status_code = (
+                status.HTTP_400_BAD_REQUEST
+                if exc.code in ("already_linked", "missing_email", "email_taken")
+                else status.HTTP_400_BAD_REQUEST
             )
-        email = (client.email or "").strip().lower()
-        if not email:
-            return Response(
-                {"detail": "La empresa no tiene correo. Complétalo antes de generar usuario."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).exists():
-            return Response(
-                {
-                    "detail": "Ya existe un usuario con este correo. Usa la sección Usuarios o otro correo.",
-                    "code": "email_taken",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        username = email[: User._meta.get_field("username").max_length]
-        user = User(username=username, email=email)
-        user.set_unusable_password()
-        user.save()
-        profile = user.profile
-        profile.role = UserProfile.Role.CLIENT
-        profile.client = client
-        profile.workspace = client.workspace
-        profile.full_clean()
-        profile.save()
-        revoke_django_privileges(user)
-        token = build_user_password_setup_token(user.pk)
-        q = f"token={quote(token, safe='')}&email={quote(email, safe='')}"
+            detail = exc.message
+            if exc.code == "missing_email":
+                detail = "La empresa no tiene correo. Complétalo antes de generar usuario."
+            if exc.code == "email_taken":
+                detail = (
+                    "Ya existe un usuario con este correo. Usa la sección Usuarios o otro correo."
+                )
+            return Response({"detail": detail, "code": exc.code}, status=status_code)
+
+        email, token, registration_query = build_client_registration_link_parts(
+            client=client, user=user
+        )
         return Response(
             {
                 "user_id": user.id,
                 "email": email,
                 "token": token,
-                "registration_query": q,
+                "registration_query": registration_query,
             },
             status=status.HTTP_201_CREATED,
         )

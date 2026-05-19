@@ -106,6 +106,11 @@ def on_order_status_changed(
     actor: AbstractBaseUser | None = None,
 ) -> None:
     """Efectos colaterales al cambiar estado (p. ej. liberar hold al cancelar)."""
+    if new_status == OrderStatus.DRAFT and prev_status != OrderStatus.DRAFT:
+        if order.hold_expires_at is not None:
+            Order.objects.filter(pk=order.pk).update(hold_expires_at=None)
+            order.hold_expires_at = None
+        release_reserved_ad_spaces_for_order(order)
     if new_status == OrderStatus.CANCELLED and prev_status != OrderStatus.CANCELLED:
         release_reserved_ad_spaces_for_order(order)
         if order.hold_expires_at is not None:

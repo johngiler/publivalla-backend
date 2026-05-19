@@ -121,6 +121,27 @@ def _emails_client_and_admins(order: Order) -> list[str]:
     return out
 
 
+def _order_guest_submitted_dispatches(
+    order: Order,
+) -> list[tuple[list[str], OrderStatusAudience]]:
+    """
+    Checkout invitado (sin sesión) u otro envío sin actor al pasar a «Enviada».
+
+    Siempre avisa a **todos** los administradores del workspace (sin quitar correos que
+    coincidan con el de la empresa) y confirma al cliente.
+    """
+    if order.client.workspace is None:
+        return []
+    out: list[tuple[list[str], OrderStatusAudience]] = []
+    admin_addrs = _emails_marketplace_admins(order, exclude_user_id=None)
+    if admin_addrs:
+        out.append((admin_addrs, "admins"))
+    client_addrs = _emails_client_company(order)
+    if client_addrs:
+        out.append((client_addrs, "client_submitted"))
+    return out
+
+
 def _order_status_broadcast_dispatches(
     order: Order,
     *,
@@ -166,10 +187,14 @@ def _order_status_email_dispatches(
     - Admin marketplace del mismo workspace → empresa cliente (plantilla «cliente») y el resto
       de administradores del owner (plantilla «admin_peers»), sin notificar al propio actor.
     - Cliente marketplace del pedido → solo otros administradores (plantilla «admins»), sin el actor.
-    - Sin actor o actor no reconocible → empresa (cliente) y admins por separado («admin_broadcast»).
+    - Sin actor (checkout invitado) al pasar a «Enviada» → equipo completo («admins») + empresa.
+    - Sin actor en otros estados → empresa y admins por separado («admin_broadcast»).
     - Cliente que envía la solicitud (→ «Enviada») → admins y correo de confirmación a la empresa.
     """
+    to_s = (to_status or "").strip()
     if actor_id is None:
+        if to_s == OrderStatus.SUBMITTED:
+            return _order_guest_submitted_dispatches(order)
         return _order_status_broadcast_dispatches(order, to_status=to_status)
 
     try:
@@ -177,6 +202,8 @@ def _order_status_email_dispatches(
             "role", "workspace_id", "client_id"
         ).get(user_id=actor_id)
     except UserProfile.DoesNotExist:
+        if to_s == OrderStatus.SUBMITTED:
+            return _order_guest_submitted_dispatches(order)
         return _order_status_broadcast_dispatches(order, to_status=to_status)
 
     ws_id = order.client.workspace_id
@@ -218,6 +245,8 @@ def _order_status_email_dispatches(
                 out.append((client_addrs, "client_submitted"))
         return out
 
+    if to_s == OrderStatus.SUBMITTED:
+        return _order_guest_submitted_dispatches(order)
     return _order_status_broadcast_dispatches(order, to_status=to_status)
 
 
@@ -275,8 +304,8 @@ def send_workspace_transactional_email(
 
     ``body`` es texto plano; ``html_body`` opcional se envía como alternativa multipart / campo HTML en Mailgun.
 
-    ``inline_logo`` es ``(bytes, nombre_archivo, mime)`` del PNG del workspace (``logo_png_artifacts``), alineado con el CID
-    del HTML generado por las plantillas transaccionales.
+    ``inline_logo`` (bytes, nombre CID, MIME) se adjunta inline para clientes que usan ``cid:`` en el HTML;
+    la plantilla también incluye fondo base64 en la cabecera para Apple Mail.
 
     Retorna False si falta remitente, relay incompleto, no hay destinatarios o el envío falló.
     """
@@ -412,6 +441,7 @@ def try_send_order_status_emails(
     to_status: str,
     *,
     actor_id: int | None = None,
+    skip_client_status_email: bool = False,
 ) -> None:
     """
     Envía un correo cuando cambia el estado del pedido (SMTP del workspace).
@@ -423,6 +453,8 @@ def try_send_order_status_emails(
     (enlace al panel de pedidos), si hay destinatarios en cada grupo.
     """
     if from_status == to_status:
+        return
+    if (to_status or "").strip() == OrderStatus.DRAFT:
         return
     ws = order.client.workspace
     if ws is None:
@@ -441,6 +473,7 @@ def try_send_order_status_emails(
         )
         return
 
+    from apps.clients.utils.marketplace_user import client_has_marketplace_user
     from apps.orders.services.order_hold_services import order_display_status_label
 
     if str(to_status) == str(order.status):
@@ -451,13 +484,16 @@ def try_send_order_status_emails(
         except ValueError:
             to_label = to_status
 
-    if from_status == OrderStatus.SUBMITTED:
+    from_s = (from_status or "").strip()
+    if not from_s or from_s == OrderStatus.DRAFT:
+        from_label = ""
+    elif from_s == OrderStatus.SUBMITTED:
         from_label = "Reservado"
     else:
         try:
-            from_label = OrderStatus(from_status).label if from_status else ""
+            from_label = OrderStatus(from_s).label
         except ValueError:
-            from_label = from_status or ""
+            from_label = from_s
 
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
     accent = (getattr(ws, "primary_color", None) or "").strip() or None
@@ -465,6 +501,13 @@ def try_send_order_status_emails(
     any_failed = False
     for recipients, audience in dispatches:
         if not recipients:
+            continue
+        if skip_client_status_email and audience in ("client", "client_submitted"):
+            logger.info(
+                "Pedido %s → %s: omitido correo de estado al cliente (activación primera vez).",
+                order.pk,
+                to_status,
+            )
             continue
         orders_url = (
             _order_client_orders_url(order)
@@ -481,6 +524,7 @@ def try_send_order_status_emails(
             orders_url=orders_url,
             accent_hex=accent,
             workspace=ws,
+            client_has_marketplace_account=client_has_marketplace_user(order.client),
         )
         if not send_workspace_transactional_email(
             ws,

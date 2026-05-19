@@ -20,6 +20,7 @@ def send_order_status_emails_work(
     to_status: str,
     *,
     actor_id: int | None = None,
+    skip_client_status_email: bool = False,
 ) -> None:
     from apps.orders.utils.email_notifications import try_send_order_status_emails
     from apps.orders.models import Order
@@ -30,7 +31,11 @@ def send_order_status_emails_work(
         logger.warning("send_order_status_emails: pedido %s no encontrado.", order_id)
         return
     try_send_order_status_emails(
-        order, from_status or "", to_status, actor_id=actor_id
+        order,
+        from_status or "",
+        to_status,
+        actor_id=actor_id,
+        skip_client_status_email=skip_client_status_email,
     )
 
 
@@ -45,8 +50,15 @@ def send_order_status_emails_task(
     from_status: str,
     to_status: str,
     actor_id: int | None = None,
+    skip_client_status_email: bool = False,
 ) -> None:
-    send_order_status_emails_work(order_id, from_status, to_status, actor_id=actor_id)
+    send_order_status_emails_work(
+        order_id,
+        from_status,
+        to_status,
+        actor_id=actor_id,
+        skip_client_status_email=skip_client_status_email,
+    )
 
 
 def schedule_send_order_status_emails(
@@ -55,6 +67,7 @@ def schedule_send_order_status_emails(
     to_status: str,
     *,
     actor_id: int | None = None,
+    skip_client_status_email: bool = False,
 ) -> None:
     """Encola el envío en Celery (requiere broker)."""
     from_s = from_status or ""
@@ -66,7 +79,13 @@ def schedule_send_order_status_emails(
         )
         return
     try:
-        send_order_status_emails_task.delay(order_id, from_s, to_status, actor_id=actor_id)
+        send_order_status_emails_task.delay(
+            order_id,
+            from_s,
+            to_status,
+            actor_id=actor_id,
+            skip_client_status_email=skip_client_status_email,
+        )
     except Exception:
         logger.exception(
             "No se pudo encolar la notificación por correo (pedido %s → %s).",

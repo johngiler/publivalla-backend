@@ -16,7 +16,7 @@ from apps.common.utils.catalog_access import shopping_center_allows_public_catal
 from apps.clients.models import Client, ClientStatus
 from apps.orders.models import Order, OrderItem, OrderPaymentMethod, OrderStatus
 from apps.orders.serializers import OrderItemWriteSerializer, OrderSerializer
-from apps.orders.services import log_order_status_transition, submit_draft_order
+from apps.orders.services import submit_draft_order
 from apps.users.serializers import revoke_django_privileges
 from apps.users.models import UserProfile
 from apps.users.utils.password_policy import marketplace_password_policy_errors
@@ -381,14 +381,6 @@ class GuestCheckoutView(APIView):
                     total += row["_subtotal"]
                 order.total_amount = total.quantize(Decimal("0.01"))
                 order.save(update_fields=["total_amount"])
-
-                log_order_status_transition(
-                    order,
-                    "",
-                    OrderStatus.DRAFT,
-                    actor=None,
-                    note="Orden creada (checkout invitado, borrador).",
-                )
 
                 actor_user = None
                 if data.get("create_account"):

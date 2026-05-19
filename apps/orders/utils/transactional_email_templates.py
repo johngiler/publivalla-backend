@@ -5,8 +5,8 @@ Variables expuestas al contenido: solo datos útiles para quien recibe el correo
 (referencia humana del pedido, nombres legibles, estados, enlace de acción).
 Sin IDs internos ni jerga técnica en el cuerpo visible.
 
-El logotipo en cabecera usa solo ``logo_png_artifacts`` (Mi negocio, PNG) como adjunto inline con CID;
-si no hay archivo usable se muestra el nombre del marketplace en texto.
+El logotipo en cabecera usa ``logo_png_artifacts`` (Mi negocio, PNG): adjunto inline (CID) para Gmail
+y fondo base64 en la celda para Apple Mail; si no hay archivo usable se muestra el nombre del marketplace.
 """
 
 from __future__ import annotations
@@ -18,7 +18,10 @@ from typing import Literal
 from apps.orders.utils.email_transactional_logo import (
     prepare_workspace_logo_for_transactional_email,
 )
-from apps.workspaces.utils.email_inline_logo import workspace_email_logo_inline_filename
+from apps.workspaces.utils.email_inline_logo import (
+    EMAIL_LOGO_HEAD_STYLES,
+    workspace_email_logo_header_row,
+)
 
 OrderStatusAudience = Literal[
     "client",
@@ -42,29 +45,33 @@ def _cta_background_hex(ws_primary: str | None) -> str:
     return "#18181b"
 
 
+def _append_order_status_rows(
+    rows: list[tuple[str, str]],
+    *,
+    previous_status_label: str,
+    new_status_label: str,
+) -> None:
+    """No muestra «Estado anterior» si venía de borrador o no hay etiqueta."""
+    prev = (previous_status_label or "").strip()
+    if prev and prev != "—":
+        rows.append(("Estado anterior", prev))
+    rows.append(("Estado actual", (new_status_label or "").strip() or "—"))
+
+
 def _render_transactional_shell(
     *,
     document_title: str,
     headline: str,
     lead: str,
     rows: list[tuple[str, str]],
-    cta_url: str,
-    cta_label: str,
+    cta_url: str | None,
+    cta_label: str | None,
     footer_note: str,
     accent_hex: str,
-    has_tenant_logo_inline: bool,
+    inline_logo: tuple[bytes, str, str] | None,
     tenant_logo_alt: str,
 ) -> str:
-    alt = _safe(tenant_logo_alt or "Marketplace")
-    logo_block = (
-        f'<img src="cid:{workspace_email_logo_inline_filename()}" width="200" alt="{alt}" '
-        'style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;">'
-        if has_tenant_logo_inline
-        else (
-            '<span style="font:700 18px/1.2 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#18181b;">'
-            f"{alt}</span>"
-        )
-    )
+    logo_row = workspace_email_logo_header_row(inline_logo, alt=tenant_logo_alt)
 
     rows_html = ""
     for label, value in rows:
@@ -78,24 +85,32 @@ def _render_transactional_shell(
         )
 
     accent = _safe(accent_hex)
+    cta_block = ""
+    if (cta_url or "").strip() and (cta_label or "").strip():
+        cta_block = f"""
+          <tr>
+            <td style="padding:22px 24px 8px;">
+              <a href="{_safe(cta_url.strip())}" style="display:inline-block;padding:12px 20px;border-radius:12px;background:{accent};color:#ffffff;font:600 14px/1 system-ui,sans-serif;text-decoration:none;">
+                {_safe(cta_label.strip())}
+              </a>
+            </td>
+          </tr>"""
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="x-apple-disable-message-reformatting">
   <title>{_safe(document_title)}</title>
+  {EMAIL_LOGO_HEAD_STYLES}
 </head>
 <body style="margin:0;padding:0;background:#f4f4f5;-webkit-text-size-adjust:100%;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f5;">
     <tr>
       <td align="center" style="padding:28px 14px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;border:1px solid #e4e4e7;overflow:hidden;">
-          <tr>
-            <td style="padding:28px 24px 12px;text-align:center;background:#fafafa;border-bottom:1px solid #f4f4f5;">
-              {logo_block}
-            </td>
-          </tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;border-collapse:separate;border-spacing:0;background:#ffffff;border-radius:16px;border:1px solid #e4e4e7;overflow:hidden;">
+          {logo_row}
           <tr>
             <td style="padding:24px 24px 8px;">
               <h1 style="margin:0;font:700 20px/1.25 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#18181b;">
@@ -113,15 +128,9 @@ def _render_transactional_shell(
               </table>
             </td>
           </tr>
+          {cta_block}
           <tr>
-            <td style="padding:22px 24px 8px;">
-              <a href="{_safe(cta_url)}" style="display:inline-block;padding:12px 20px;border-radius:12px;background:{accent};color:#ffffff;font:600 14px/1 system-ui,sans-serif;text-decoration:none;">
-                {_safe(cta_label)}
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 24px 28px;border-top:1px solid #f4f4f5;font:12px/1.5 system-ui,sans-serif;color:#71717a;">
+            <td style="padding:16px 24px 28px;border-top:1px solid #f4f4f5;border-radius:0 0 16px 16px;font:12px/1.5 system-ui,sans-serif;color:#71717a;">
               {_safe(footer_note)}
             </td>
           </tr>
@@ -144,6 +153,7 @@ def build_order_status_transactional_email(
     orders_url: str,
     accent_hex: str | None,
     workspace,
+    client_has_marketplace_account: bool = True,
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
     """
     Construye asunto, cuerpo texto plano, HTML y datos del logo inline (o ``None``).
@@ -154,10 +164,12 @@ def build_order_status_transactional_email(
     Variables de negocio (todas cadenas legibles):
     - marketplace_title, order_code (vacío si aún no hay código público),
       previous_status_label, new_status_label, company_name, orders_url.
+    - ``client_has_marketplace_account``: si es False y la audiencia es ``client`` o
+      ``client_submitted``, no se incluye el botón «Ir a mis pedidos».
     """
     mp = (marketplace_title or "").strip() or "Marketplace"
     code = (order_code or "").strip()
-    prev_l = (previous_status_label or "").strip() or "—"
+    prev_l = (previous_status_label or "").strip()
     new_l = (new_status_label or "").strip() or "—"
     company = (company_name or "").strip() or "—"
     accent = _cta_background_hex(accent_hex)
@@ -166,34 +178,52 @@ def build_order_status_transactional_email(
         subject = f"{mp}: tu pedido pasó a «{new_l}»"
         headline = "Actualización de tu pedido"
         lead = f"Tu pedido cambió de estado. Ahora figura como «{new_l}»."
-        rows: list[tuple[str, str]] = [
-            ("Estado anterior", prev_l),
-            ("Estado actual", new_l),
-        ]
+        rows: list[tuple[str, str]] = []
         if code:
-            rows.insert(0, ("Referencia", code))
-        footer = (
-            "Este mensaje es una notificación automática del marketplace. "
-            "Si no esperabas este correo, revisa la actividad de tu cuenta."
+            rows.append(("Referencia", code))
+        _append_order_status_rows(
+            rows, previous_status_label=prev_l, new_status_label=new_l
         )
+        if client_has_marketplace_account:
+            footer = (
+                "Este mensaje es una notificación automática del marketplace. "
+                "Si no esperabas este correo, revisa la actividad de tu cuenta."
+            )
+        else:
+            footer = (
+                "Este mensaje es una notificación automática del marketplace. "
+                "Si no esperabas este correo, contacta al equipo del marketplace."
+            )
     elif audience == "client_submitted":
         subject = f"{mp}: recibimos tu solicitud"
         headline = "Solicitud enviada"
-        lead = (
-            "Ya recibimos tu solicitud en el marketplace. El equipo la revisará; "
-            "si necesitan algún dato adicional, se pondrán en contacto contigo. "
-            "Puedes consultar el estado del pedido cuando quieras desde tu cuenta. "
-            "Gracias por tu paciencia mientras avanzamos en el proceso."
-        )
+        if client_has_marketplace_account:
+            lead = (
+                "Ya recibimos tu solicitud en el marketplace. El equipo la revisará; "
+                "si necesitan algún dato adicional, se pondrán en contacto contigo. "
+                "Puedes consultar el estado del pedido cuando quieras desde tu cuenta. "
+                "Gracias por tu paciencia mientras avanzamos en el proceso."
+            )
+            footer = (
+                "Este mensaje confirma que tu envío quedó registrado. "
+                "Si no realizaste esta solicitud, revisa la actividad de tu cuenta."
+            )
+        else:
+            lead = (
+                "Ya recibimos tu solicitud en el marketplace. El equipo la revisará; "
+                "si necesitan algún dato adicional, se pondrán en contacto contigo. "
+                "Cuando aprueben tu solicitud, recibirás un correo con los pasos para crear "
+                "tu acceso al marketplace. Gracias por tu paciencia mientras avanzamos en el proceso."
+            )
+            footer = (
+                "Este mensaje confirma que tu envío quedó registrado. "
+                "Si no realizaste esta solicitud, contacta al equipo del marketplace."
+            )
         rows = [
             ("Estado actual", new_l),
         ]
         if code:
             rows.insert(0, ("Referencia", code))
-        footer = (
-            "Este mensaje confirma que tu envío quedó registrado. "
-            "Si no realizaste esta solicitud, revisa la actividad de tu cuenta."
-        )
     elif audience == "admins":
         subject = f"{mp}: pedido de {company} — «{new_l}»"
         headline = "Cambio de estado en un pedido"
@@ -201,13 +231,12 @@ def build_order_status_transactional_email(
             f"La empresa «{company}» tiene un pedido que avanzó en el flujo. "
             f"El estado actual es «{new_l}»."
         )
-        rows = [
-            ("Empresa", company),
-            ("Estado anterior", prev_l),
-            ("Estado actual", new_l),
-        ]
+        rows = [("Empresa", company)]
         if code:
-            rows.insert(1, ("Referencia del pedido", code))
+            rows.insert(0, ("Referencia del pedido", code))
+        _append_order_status_rows(
+            rows, previous_status_label=prev_l, new_status_label=new_l
+        )
         footer = (
             "Notificación para el equipo del marketplace. "
             "Revisa el detalle en el panel si necesitas tomar acción."
@@ -219,13 +248,12 @@ def build_order_status_transactional_email(
             f"Otro administrador del marketplace actualizó el flujo del pedido de «{company}». "
             f"El estado actual es «{new_l}»."
         )
-        rows = [
-            ("Empresa", company),
-            ("Estado anterior", prev_l),
-            ("Estado actual", new_l),
-        ]
+        rows = [("Empresa", company)]
         if code:
-            rows.insert(1, ("Referencia del pedido", code))
+            rows.insert(0, ("Referencia del pedido", code))
+        _append_order_status_rows(
+            rows, previous_status_label=prev_l, new_status_label=new_l
+        )
         footer = (
             "Notificación para el equipo del marketplace. "
             "Revisa el detalle en el panel si necesitas tomar acción."
@@ -237,13 +265,12 @@ def build_order_status_transactional_email(
             f"Se registró un cambio de estado en un pedido del marketplace. "
             f"El estado actual es «{new_l}»."
         )
-        rows = [
-            ("Empresa", company),
-            ("Estado anterior", prev_l),
-            ("Estado actual", new_l),
-        ]
+        rows = [("Empresa", company)]
         if code:
-            rows.insert(1, ("Referencia del pedido", code))
+            rows.insert(0, ("Referencia del pedido", code))
+        _append_order_status_rows(
+            rows, previous_status_label=prev_l, new_status_label=new_l
+        )
         footer = "Notificación automática del sistema de pedidos."
     else:
         raise ValueError(f"audience de correo de pedido no soportada: {audience!r}")
@@ -252,6 +279,12 @@ def build_order_status_transactional_email(
         "Ir a mis pedidos"
         if audience in ("client", "client_submitted")
         else "Ir al panel de pedidos"
+    )
+    # Empresa sin usuario marketplace: correos informativos sin CTA; el único botón
+    # para invitados es «Crear contraseña» en el correo de activación tras aprobación.
+    include_cta = not (
+        audience in ("client", "client_submitted")
+        and not client_has_marketplace_account
     )
     inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
     brand_alt = (
@@ -268,11 +301,11 @@ def build_order_status_transactional_email(
         headline=headline,
         lead=lead,
         rows=rows,
-        cta_url=orders_url,
-        cta_label=cta_label,
+        cta_url=orders_url if include_cta else None,
+        cta_label=cta_label if include_cta else None,
         footer_note=footer,
         accent_hex=accent,
-        has_tenant_logo_inline=inline_logo is not None,
+        inline_logo=inline_logo,
         tenant_logo_alt=brand_alt,
     )
 
@@ -285,14 +318,14 @@ def build_order_status_transactional_email(
     for label, value in rows:
         if (value or "").strip():
             lines.append(f"{label}: {value}")
-    lines.extend(
-        [
-            "",
-            f"{cta_label}: {orders_url}",
-            "",
-            footer,
-        ]
-    )
+    if include_cta:
+        lines.extend(
+            [
+                "",
+                f"{cta_label}: {orders_url}",
+            ]
+        )
+    lines.extend(["", footer])
     text_body = "\n".join(lines)
     return subject, text_body, html_body, inline_logo
 
@@ -303,6 +336,7 @@ def build_client_activation_transactional_email(
     company_name: str,
     contact_first_line: str,
     activation_url: str,
+    login_email: str,
     accent_hex: str | None,
     workspace,
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
@@ -311,19 +345,29 @@ def build_client_activation_transactional_email(
     company = (company_name or "").strip() or "tu empresa"
     accent = _cta_background_hex(accent_hex)
     greet = (contact_first_line or "").strip()
+    access_email = (login_email or "").strip()
 
     subject = f"{mp}: activa tu acceso al marketplace"
     headline = "Tu solicitud fue aprobada"
-    lead_main = (
-        f"Puedes crear tu contraseña para entrar con el correo de «{company}» "
-        "y gestionar pedidos y reservas."
-    )
+    if access_email:
+        lead_main = (
+            "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña. "
+            f"Para iniciar sesión en el marketplace, usa siempre este correo: {access_email}."
+        )
+    else:
+        lead_main = (
+            "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña "
+            "y gestionar pedidos y reservas en el marketplace."
+        )
     lead = f"{greet} {lead_main}".strip() if greet else lead_main
 
-    rows = [("Empresa", company)]
+    rows: list[tuple[str, str]] = []
+    if access_email:
+        rows.append(("Correo para iniciar sesión", access_email))
+    rows.append(("Empresa", company))
     footer = (
-        "El enlace caduca en 14 días. Si ya tienes cuenta, inicia sesión con tu correo. "
-        "Este mensaje lo envía el sistema de notificaciones del marketplace."
+        "El enlace caduca en 14 días. Inicia sesión con el correo indicado arriba y la contraseña "
+        "que definas con el botón. Este mensaje lo envía el sistema de notificaciones del marketplace."
     )
 
     inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
@@ -345,11 +389,15 @@ def build_client_activation_transactional_email(
         cta_label="Crear contraseña",
         footer_note=footer,
         accent_hex=accent,
-        has_tenant_logo_inline=inline_logo is not None,
+        inline_logo=inline_logo,
         tenant_logo_alt=brand_alt,
     )
 
-    text_lines = [headline, "", lead, "", f"Crear contraseña: {activation_url}", "", footer]
+    text_lines = [headline, "", lead, ""]
+    for label, value in rows:
+        if (value or "").strip():
+            text_lines.append(f"{label}: {value}")
+    text_lines.extend(["", f"Crear contraseña: {activation_url}", "", footer])
     return subject, "\n".join(text_lines), html_body, inline_logo
 
 
@@ -426,7 +474,7 @@ def build_order_client_activity_admin_email(
         cta_label="Ir al panel de pedidos",
         footer_note=footer,
         accent_hex=accent,
-        has_tenant_logo_inline=inline_logo is not None,
+        inline_logo=inline_logo,
         tenant_logo_alt=brand_alt,
     )
 

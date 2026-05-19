@@ -66,9 +66,22 @@ def log_order_status_transition(
     actor_id = getattr(actor, "pk", None) if actor is not None else None
 
     def enqueue_status_emails() -> None:
+        to_s = (to_status or "").strip()
+        if to_s == OrderStatus.DRAFT or from_s == to_s:
+            return
+        from apps.clients.utils.marketplace_user import client_has_marketplace_user
         from apps.orders.tasks import schedule_send_order_status_emails
 
-        schedule_send_order_status_emails(order_id, from_s, to_status, actor_id=actor_id)
+        skip_client = to_s == OrderStatus.CLIENT_APPROVED and not client_has_marketplace_user(
+            order.client
+        )
+        schedule_send_order_status_emails(
+            order_id,
+            from_s,
+            to_status,
+            actor_id=actor_id,
+            skip_client_status_email=skip_client,
+        )
 
     transaction.on_commit(enqueue_status_emails)
     return ev

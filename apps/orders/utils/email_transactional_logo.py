@@ -1,9 +1,8 @@
 """
-Logo para correos transaccionales (adjunto CID).
+Logo para correos transaccionales (PNG en Mi negocio).
 
-Solo se usa ``Workspace.logo_png_artifacts`` (PNG en Mi negocio), vía
-``prepare_workspace_email_logo_for_inline``. El logotipo vectorial en ``logo`` /
-``logo_mark`` queda para web; no se rasteriza en el servidor.
+Solo se usa ``Workspace.logo_png_artifacts``, vía ``prepare_workspace_email_logo_for_inline``.
+El HTML del correo usa ``workspace_email_logo_header_row`` (CID + fondo base64).
 """
 
 from __future__ import annotations
