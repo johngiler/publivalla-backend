@@ -30,6 +30,9 @@ class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
     shopping_center_name = serializers.CharField(
         source="ad_space.shopping_center.name", read_only=True
     )
+    shopping_center_slug = serializers.CharField(
+        source="ad_space.shopping_center.slug", read_only=True
+    )
     type_label = serializers.SerializerMethodField()
 
     class Meta:
@@ -41,6 +44,7 @@ class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
             "ad_space_title",
             "shopping_center_id",
             "shopping_center_name",
+            "shopping_center_slug",
             "start_date",
             "end_date",
             "type",
@@ -56,6 +60,7 @@ class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
             "ad_space_title",
             "shopping_center_id",
             "shopping_center_name",
+            "shopping_center_slug",
             "type",
             "type_label",
             "created_at",

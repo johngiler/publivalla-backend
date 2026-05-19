@@ -105,6 +105,11 @@ def _orders_for_space_submitted(ad_space_id: int, workspace: Workspace) -> list[
     )
 
 
+def count_competing_submission_groups(workspace: Workspace) -> int:
+    """Número de tomas con dos o más solicitudes enviadas pendientes de adjudicar."""
+    return len(list_competing_submission_groups(workspace))
+
+
 def list_competing_submission_groups(workspace: Workspace) -> list[dict]:
     """Tomas con dos o más pedidos en estado «enviada»."""
     rows = (

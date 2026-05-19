@@ -35,13 +35,21 @@ from apps.workspaces.tenant import get_workspace_for_request
 logger = logging.getLogger(__name__)
 
 
-def _build_order_admin_list_search_q(search: str) -> Q:
+def _build_order_list_search_q(search: str) -> Q:
     """
-    Búsqueda en listado admin: nombre de cliente, id numérico del pedido o referencia
-    tipo #SLUG-ORDER-000004 (con o sin #, espacios ignorados), y texto en code.
+    Búsqueda en listado de pedidos (admin y «Mis pedidos»): cliente, referencia del pedido,
+    id numérico, código o título de espacio publicitario en las líneas.
     """
     raw = search.strip()
-    q = Q(client__company_name__icontains=raw) | Q(code__icontains=raw)
+    code_compact = re.sub(r"\s+", "", raw)
+    q = (
+        Q(client__company_name__icontains=raw)
+        | Q(code__icontains=raw)
+        | Q(items__ad_space__title__icontains=raw)
+        | Q(items__ad_space__code__icontains=raw)
+    )
+    if code_compact and code_compact != raw:
+        q |= Q(items__ad_space__code__icontains=code_compact)
     norm = re.sub(r"\s+", "", raw).upper()
     if norm.isdigit():
         try:
@@ -55,6 +63,10 @@ def _build_order_admin_list_search_q(search: str) -> Q:
         except (ValueError, OverflowError):
             pass
     return q
+
+
+# Compat. con nombre anterior (autoreload puede dejar bytecode con la referencia vieja).
+_build_order_admin_list_search_q = _build_order_list_search_q
 
 
 # Estados entre envío y activación (no incluye borrador ni activa/vencida/cancel/rechazo).
@@ -144,9 +156,14 @@ class OrderViewSet(
             st = self.request.query_params.get("status")
             if st and st != "all":
                 qs = qs.filter(status=st)
+            exclude_raw = self.request.query_params.get("exclude_status", "").strip()
+            if exclude_raw:
+                excluded = [s.strip() for s in exclude_raw.split(",") if s.strip()]
+                if excluded:
+                    qs = qs.exclude(status__in=excluded)
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(_build_order_admin_list_search_q(search))
+                qs = qs.filter(_build_order_list_search_q(search)).distinct()
         return qs
 
     def get_serializer_class(self):

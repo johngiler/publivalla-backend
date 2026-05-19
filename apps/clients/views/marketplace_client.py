@@ -32,7 +32,7 @@ def _contract_row_kind(*, order_status: str, start_date, end_date, today) -> str
 class MyContractsView(APIView):
     """
     Líneas de pedido en órdenes activas o vencidas (contrato operativo tras el flujo hasta activa).
-    Query: ?phase=running|upcoming|ended|all (default all).
+    Query: ?phase=running|upcoming|ended|open|all (``open`` = en curso + próximos, sin finalizados).
     """
 
     permission_classes = [IsAuthenticated]
@@ -52,7 +52,10 @@ class MyContractsView(APIView):
 
         today = timezone.localdate()
         phase = (request.query_params.get("phase") or "all").strip().lower()
-        if phase not in ("running", "upcoming", "ended", "all"):
+        phase_kinds: frozenset[str] | None = None
+        if phase == "open":
+            phase_kinds = frozenset(("running", "upcoming"))
+        elif phase not in ("running", "upcoming", "ended", "all"):
             phase = "all"
 
         qs = (
@@ -87,7 +90,10 @@ class MyContractsView(APIView):
                 upcoming_n += 1
             else:
                 ended_n += 1
-            if phase != "all" and kind != phase:
+            if phase_kinds is not None:
+                if kind not in phase_kinds:
+                    continue
+            elif phase != "all" and kind != phase:
                 continue
 
             ad = it.ad_space
@@ -179,10 +185,20 @@ class MyFavoritesView(APIView):
             .order_by("-created_at", "-id")
         )
 
-        ctx = {"request": request}
+        fav_list = list(favs)
+        ctx = {"request": request, "marketplace_client": client}
+        ids = [fav.ad_space_id for fav in fav_list]
+        if ids:
+            from apps.ad_spaces.utils.availability_calendar import (
+                client_months_highlight_by_year_bulk,
+            )
+
+            ctx["client_months_bulk"] = client_months_highlight_by_year_bulk(
+                ids, client.pk
+            )
         results = []
         favorite_space_ids = []
-        for fav in favs:
+        for fav in fav_list:
             ad = fav.ad_space
             favorite_space_ids.append(ad.id)
             ser = AdSpaceSerializer(ad, context=ctx)

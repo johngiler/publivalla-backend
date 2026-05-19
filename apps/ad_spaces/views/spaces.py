@@ -17,6 +17,15 @@ from apps.orders.utils.rental_billing import (
     total_billed_units,
 )
 from apps.orders.utils.validators import order_item_conflicts
+from apps.ad_spaces.utils.catalog_client_scope import (
+    MINE_ACTIVE,
+    MINE_CART,
+    MINE_FAVORITES,
+    MINE_RESERVED,
+    apply_catalog_mine_filter,
+    count_catalog_scope,
+    parse_cart_ad_space_ids,
+)
 from apps.workspaces.tenant import get_workspace_for_request
 
 _EMPTY_CITY_SENTINEL = "__empty__"
@@ -56,6 +65,39 @@ class CatalogMountingProvidersPagination(PageNumberPagination):
 class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AdSpaceSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        request = self.request
+        if request.user.is_authenticated:
+            from apps.users.utils import get_marketplace_client
+
+            client = get_marketplace_client(request.user)
+            if client is not None:
+                ctx["marketplace_client"] = client
+        return ctx
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        context = self.get_serializer_context()
+        client = context.get("marketplace_client")
+        if client is not None:
+            targets = page if page is not None else queryset
+            ids = [obj.pk for obj in targets]
+            if ids:
+                from apps.ad_spaces.utils.availability_calendar import (
+                    client_months_highlight_by_year_bulk,
+                )
+
+                context["client_months_bulk"] = client_months_highlight_by_year_bulk(
+                    ids, client.pk
+                )
+        if page is not None:
+            serializer = self.get_serializer(page, many=True, context=context)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True, context=context)
+        return Response(serializer.data)
+
     @staticmethod
     def _apply_list_search(qs, search: str):
         if not search:
@@ -71,7 +113,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             | Q(shopping_center__district__icontains=search)
         )
 
-    def _catalog_base_qs(self, request):
+    def _catalog_base_qs(self, request, *, apply_mine: bool = True):
         """Tomas publicables del tenant con filtros de listado/facets (sin prefetch)."""
         qs = AdSpace.objects.filter(
             shopping_center__marketplace_catalog_enabled=True,
@@ -94,6 +136,23 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         space_type = (request.query_params.get("type") or "").strip()
         if space_type:
             qs = qs.filter(type=space_type)
+        if apply_mine:
+            mine = (request.query_params.get("mine") or "").strip().lower()
+            if mine:
+                client = None
+                if request.user.is_authenticated:
+                    from apps.users.utils import get_marketplace_client
+
+                    client = get_marketplace_client(request.user)
+                cart_ids = parse_cart_ad_space_ids(
+                    request.query_params.get("cart_ids") or ""
+                )
+                qs = apply_catalog_mine_filter(
+                    qs,
+                    mine=mine,
+                    client_id=client.pk if client else None,
+                    cart_ad_space_ids=cart_ids if mine == MINE_CART else None,
+                )
         return qs
 
     def get_queryset(self):
@@ -277,3 +336,38 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             if r.get("type")
         ]
         return Response({"total": total, "items": items})
+
+    @action(detail=False, methods=["get"], url_path="client-scope-facets")
+    def client_scope_facets(self, request):
+        """
+        Conteos para filtros «Mis favoritos», «Mis activos», «En carrito», «Mis reservas».
+        Respeta búsqueda y filtros de ciudad, centro y tipo (no el filtro `mine` activo).
+        """
+        qs = self._catalog_base_qs(request, apply_mine=False)
+        client = None
+        if request.user.is_authenticated:
+            from apps.users.utils import get_marketplace_client
+
+            client = get_marketplace_client(request.user)
+        cart_ids = parse_cart_ad_space_ids(request.query_params.get("cart_ids") or "")
+        client_id = client.pk if client else None
+        scopes = [
+            (MINE_FAVORITES, "Mis favoritos"),
+            (MINE_ACTIVE, "Mis activos"),
+            (MINE_CART, "En carrito"),
+            (MINE_RESERVED, "Mis reservas"),
+        ]
+        items = [
+            {
+                "scope": scope,
+                "label": label,
+                "count": count_catalog_scope(
+                    qs,
+                    scope,
+                    client_id=client_id,
+                    cart_ad_space_ids=cart_ids,
+                ),
+            }
+            for scope, label in scopes
+        ]
+        return Response({"items": items})

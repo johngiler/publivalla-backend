@@ -31,6 +31,7 @@ from apps.orders.views import (
 )
 from apps.orders.views.competing_reservations import (
     AdminCompetingReservationAwardView,
+    AdminCompetingReservationsCountView,
     AdminCompetingReservationsListView,
 )
 from apps.users.views import (
@@ -98,6 +99,11 @@ urlpatterns = [
         "api/admin/competing-reservations/",
         AdminCompetingReservationsListView.as_view(),
         name="admin-competing-reservations",
+    ),
+    path(
+        "api/admin/competing-reservations/count/",
+        AdminCompetingReservationsCountView.as_view(),
+        name="admin-competing-reservations-count",
     ),
     path(
         "api/admin/competing-reservations/<int:ad_space_id>/award/",

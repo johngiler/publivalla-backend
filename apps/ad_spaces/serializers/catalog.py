@@ -9,6 +9,7 @@ from apps.malls.utils.high_season import (
 from apps.ad_spaces.utils.availability_calendar import (
     active_availability_block_ranges,
     availability_calendar_years,
+    client_months_highlight_by_year,
     months_occupied_by_year,
     year_months_occupied,
 )
@@ -37,6 +38,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     availability_calendar_years = serializers.SerializerMethodField(read_only=True)
     months_occupied = serializers.SerializerMethodField(read_only=True)
     months_occupied_by_year = serializers.SerializerMethodField(read_only=True)
+    client_months_reserved_by_year = serializers.SerializerMethodField(read_only=True)
+    client_months_active_by_year = serializers.SerializerMethodField(read_only=True)
     availability_blocked_ranges = serializers.SerializerMethodField(read_only=True)
     status_label = serializers.SerializerMethodField()
     marketplace_reservable = serializers.SerializerMethodField(read_only=True)
@@ -72,6 +75,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "availability_calendar_years",
             "months_occupied",
             "months_occupied_by_year",
+            "client_months_reserved_by_year",
+            "client_months_active_by_year",
             "availability_blocked_ranges",
             "type",
             "type_label",
@@ -120,6 +125,26 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     def get_months_occupied_by_year(self, obj):
         by = months_occupied_by_year(obj.pk)
         return {str(y): flags for y, flags in by.items()}
+
+    def _client_months_field(self, obj, kind: str):
+        bulk = self.context.get("client_months_bulk")
+        if bulk is not None:
+            by_space = bulk.get(kind, {}).get(obj.pk)
+            if by_space is None:
+                return None
+            return {str(y): flags for y, flags in by_space.items()}
+        client = self.context.get("marketplace_client")
+        if client is None:
+            return None
+        highlight = client_months_highlight_by_year(obj.pk, client.pk)
+        by = highlight.get(kind, {})
+        return {str(y): flags for y, flags in by.items()}
+
+    def get_client_months_reserved_by_year(self, obj):
+        return self._client_months_field(obj, "reserved")
+
+    def get_client_months_active_by_year(self, obj):
+        return self._client_months_field(obj, "active")
 
     def get_availability_blocked_ranges(self, obj):
         return [
