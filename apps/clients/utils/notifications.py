@@ -1,4 +1,4 @@
-"""Correos y enlaces de activación de cuenta (cliente sin login en marketplace)."""
+"""Correos y enlaces de activación de cuenta (empresa sin login en marketplace)."""
 
 import logging
 
@@ -72,6 +72,7 @@ def notify_client_after_order_client_approved(order: Order) -> None:
         return
 
     link = build_client_password_setup_url(client=client, user=user)
+    # Mismo correo obligatorio en checkout / ficha (to_addr); el usuario se crea con él.
     login_email = (user.email or user.username or to_addr).strip().lower()
 
     ws = getattr(client, "workspace", None)

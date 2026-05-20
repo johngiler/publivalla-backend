@@ -15,10 +15,10 @@ HOLD_DURATION_HOURS = int(getattr(settings, "ORDER_HOLD_DURATION_HOURS", 72))
 NOTE_HOLD_ON_SUBMIT = (
     "Solicitud enviada. Las tomas quedan reservadas durante 72 horas mientras el equipo revisa."
 )
-NOTE_CANCELLED_BY_TEAM = "Pedido cancelado. Se liberó la reserva de las tomas."
+NOTE_CANCELLED_BY_TEAM = "Pedido rechazado. Se liberó la reserva de las tomas."
 NOTE_HOLD_EXPIRED = (
     "Plazo de reserva de 72 horas vencido sin respuesta del equipo. "
-    "El pedido se canceló y las tomas volvieron a estar disponibles."
+    "El pedido se rechazó y las tomas volvieron a estar disponibles."
 )
 
 

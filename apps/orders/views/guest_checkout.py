@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.clients.models import Client, ClientStatus
+from apps.clients.validators import normalize_client_rif_required
 from apps.orders.models import Order, OrderItem, OrderPaymentMethod, OrderStatus
 from apps.orders.serializers import OrderItemWriteSerializer, OrderSerializer
 from apps.orders.services import submit_draft_order
@@ -88,7 +89,8 @@ class GuestCheckoutClientEmailCheckView(APIView):
         ser = GuestCheckoutEmailCheckSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         email = ser.validated_data["email"].strip().lower()
-        client = Client.objects.filter(workspace=ws, email__iexact=email).order_by("id").first()
+        client = Client.objects.filter(
+            workspace=ws, email__iexact=email).order_by("id").first()
         if client is None:
             return Response(
                 {
@@ -117,7 +119,8 @@ class GuestCheckoutDatosValidateSerializer(serializers.Serializer):
     def validate_company_name(self, value):
         s = (value or "").strip()
         if not s:
-            raise serializers.ValidationError("Indica el nombre de la empresa.")
+            raise serializers.ValidationError(
+                "Indica el nombre de la empresa.")
         return s
 
 
@@ -155,7 +158,8 @@ class GuestCheckoutDatosValidateView(APIView):
         email = ser.validated_data["email"].strip().lower()
         company_name = ser.validated_data["company_name"].strip()
 
-        client_by_email = Client.objects.filter(workspace=ws, email__iexact=email).order_by("id").first()
+        client_by_email = Client.objects.filter(
+            workspace=ws, email__iexact=email).order_by("id").first()
         client_by_company = Client.objects.filter(
             workspace=ws, company_name__iexact=company_name
         ).order_by("id").first()
@@ -180,14 +184,25 @@ class GuestCheckoutDatosValidateView(APIView):
 
 class GuestCheckoutSerializer(serializers.Serializer):
     company_name = serializers.CharField(max_length=255)
+    rif = serializers.CharField(max_length=32)
     contact_name = serializers.CharField(max_length=255)
+    representative_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
+    representative_id_number = serializers.CharField(
+        max_length=32, required=False, allow_blank=True, default=""
+    )
     email = serializers.EmailField()
     phone = serializers.CharField(max_length=32)
-    address = serializers.CharField(allow_blank=True, default="", required=False)
-    city = serializers.CharField(allow_blank=True, default="", max_length=120, required=False)
+    address = serializers.CharField(
+        allow_blank=True, default="", required=False)
+    city = serializers.CharField(
+        allow_blank=True, default="", max_length=120, required=False)
     create_account = serializers.BooleanField(default=False)
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
-    password_confirm = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default="")
+    password_confirm = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default="")
     items = OrderItemWriteSerializer(many=True)
     payment_method = serializers.CharField(
         max_length=32, required=False, allow_blank=True, default=""
@@ -207,8 +222,12 @@ class GuestCheckoutSerializer(serializers.Serializer):
     def validate_company_name(self, value):
         s = (value or "").strip()
         if not s:
-            raise serializers.ValidationError("Indica el nombre de la empresa.")
+            raise serializers.ValidationError(
+                "Indica el nombre de la empresa.")
         return s
+
+    def validate_rif(self, value):
+        return normalize_client_rif_required(value)
 
     def validate_contact_name(self, value):
         s = (value or "").strip()
@@ -219,7 +238,8 @@ class GuestCheckoutSerializer(serializers.Serializer):
     def validate_phone(self, value):
         s = (value or "").strip()
         if not s:
-            raise serializers.ValidationError("Indica un teléfono de contacto.")
+            raise serializers.ValidationError(
+                "Indica un teléfono de contacto.")
         return s
 
     def validate_payment_method(self, value):
@@ -297,7 +317,10 @@ class GuestCheckoutView(APIView):
         data = ser.validated_data
         email = data["email"].strip().lower()
         company_name = data["company_name"].strip()
+        client_rif = data["rif"]
         contact_name = data["contact_name"].strip()
+        representative_name = (data.get("representative_name") or "").strip()
+        representative_id_number = (data.get("representative_id_number") or "").strip()
         phone = data["phone"].strip()
 
         items_data = data["items"]
@@ -318,7 +341,8 @@ class GuestCheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        client = Client.objects.filter(workspace=ws, email__iexact=email).order_by("id").first()
+        client = Client.objects.filter(
+            workspace=ws, email__iexact=email).order_by("id").first()
 
         if client is not None:
             if UserProfile.objects.filter(client=client, role=UserProfile.Role.CLIENT).exists():
@@ -330,7 +354,10 @@ class GuestCheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             client.company_name = company_name
+            client.rif = client_rif
             client.contact_name = contact_name
+            client.representative_name = representative_name
+            client.representative_id_number = representative_id_number
             client.email = email
             client.phone = phone
             client.address = (data.get("address") or "").strip()
@@ -340,8 +367,10 @@ class GuestCheckoutView(APIView):
             client = Client.objects.create(
                 workspace=ws,
                 company_name=company_name,
-                rif=None,
+                rif=client_rif,
                 contact_name=contact_name,
+                representative_name=representative_name,
+                representative_id_number=representative_id_number,
                 email=email,
                 phone=phone,
                 address=(data.get("address") or "").strip(),
@@ -386,7 +415,8 @@ class GuestCheckoutView(APIView):
                 if data.get("create_account"):
                     pwd = data["_password"]
                     uname = email[:150]
-                    user = User.objects.create_user(username=uname, email=email, password=pwd)
+                    user = User.objects.create_user(
+                        username=uname, email=email, password=pwd)
                     profile = user.profile
                     profile.role = UserProfile.Role.CLIENT
                     profile.client = client

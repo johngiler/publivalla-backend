@@ -15,6 +15,7 @@ import html
 import re
 from typing import Literal
 
+from apps.orders.models import OrderStatus
 from apps.orders.utils.email_transactional_logo import (
     prepare_workspace_logo_for_transactional_email,
 )
@@ -71,7 +72,8 @@ def _render_transactional_shell(
     inline_logo: tuple[bytes, str, str] | None,
     tenant_logo_alt: str,
 ) -> str:
-    logo_row = workspace_email_logo_header_row(inline_logo, alt=tenant_logo_alt)
+    logo_row = workspace_email_logo_header_row(
+        inline_logo, alt=tenant_logo_alt)
 
     rows_html = ""
     for label, value in rows:
@@ -154,6 +156,7 @@ def build_order_status_transactional_email(
     accent_hex: str | None,
     workspace,
     client_has_marketplace_account: bool = True,
+    to_status: str = "",
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
     """
     Construye asunto, cuerpo texto plano, HTML y datos del logo inline (o ``None``).
@@ -173,11 +176,20 @@ def build_order_status_transactional_email(
     new_l = (new_status_label or "").strip() or "—"
     company = (company_name or "").strip() or "—"
     accent = _cta_background_hex(accent_hex)
+    rejected = (to_status or "").strip() == OrderStatus.CANCELLED
 
     if audience == "client":
-        subject = f"{mp}: tu pedido pasó a «{new_l}»"
-        headline = "Actualización de tu pedido"
-        lead = f"Tu pedido cambió de estado. Ahora figura como «{new_l}»."
+        if rejected:
+            subject = f"{mp}: tu pedido fue rechazado"
+            headline = "Pedido rechazado"
+            lead = (
+                "El equipo del marketplace revisó tu solicitud. "
+                "El pedido figura como rechazado y ya no avanza en el flujo comercial."
+            )
+        else:
+            subject = f"{mp}: tu pedido pasó a «{new_l}»"
+            headline = "Actualización de tu pedido"
+            lead = f"Tu pedido cambió de estado. Ahora figura como «{new_l}»."
         rows: list[tuple[str, str]] = []
         if code:
             rows.append(("Referencia", code))
@@ -226,10 +238,14 @@ def build_order_status_transactional_email(
             rows.insert(0, ("Referencia", code))
     elif audience == "admins":
         subject = f"{mp}: pedido de {company} — «{new_l}»"
-        headline = "Cambio de estado en un pedido"
+        headline = "Pedido rechazado" if rejected else "Cambio de estado en un pedido"
         lead = (
-            f"La empresa «{company}» tiene un pedido que avanzó en el flujo. "
-            f"El estado actual es «{new_l}»."
+            f"La empresa «{company}» tiene un pedido que fue rechazado y ya no sigue en el flujo."
+            if rejected
+            else (
+                f"La empresa «{company}» tiene un pedido que avanzó en el flujo. "
+                f"El estado actual es «{new_l}»."
+            )
         )
         rows = [("Empresa", company)]
         if code:
@@ -243,10 +259,15 @@ def build_order_status_transactional_email(
         )
     elif audience == "admin_peers":
         subject = f"{mp}: pedido de {company} — «{new_l}»"
-        headline = "Cambio de estado en un pedido"
+        headline = "Pedido rechazado" if rejected else "Cambio de estado en un pedido"
         lead = (
-            f"Otro administrador del marketplace actualizó el flujo del pedido de «{company}». "
+            f"Otro administrador del marketplace rechazó el pedido de «{company}». "
             f"El estado actual es «{new_l}»."
+            if rejected
+            else (
+                f"Otro administrador del marketplace actualizó el flujo del pedido de «{company}». "
+                f"El estado actual es «{new_l}»."
+            )
         )
         rows = [("Empresa", company)]
         if code:
@@ -260,10 +281,14 @@ def build_order_status_transactional_email(
         )
     elif audience == "admin_broadcast":
         subject = f"{mp}: actualización de pedido — «{new_l}»"
-        headline = "Actualización de un pedido"
+        headline = "Pedido rechazado" if rejected else "Actualización de un pedido"
         lead = (
-            f"Se registró un cambio de estado en un pedido del marketplace. "
-            f"El estado actual es «{new_l}»."
+            f"Un pedido del marketplace fue rechazado. El estado actual es «{new_l}»."
+            if rejected
+            else (
+                f"Se registró un cambio de estado en un pedido del marketplace. "
+                f"El estado actual es «{new_l}»."
+            )
         )
         rows = [("Empresa", company)]
         if code:
@@ -273,7 +298,8 @@ def build_order_status_transactional_email(
         )
         footer = "Notificación automática del sistema de pedidos."
     else:
-        raise ValueError(f"audience de correo de pedido no soportada: {audience!r}")
+        raise ValueError(
+            f"audience de correo de pedido no soportada: {audience!r}")
 
     cta_label = (
         "Ir a mis pedidos"
@@ -289,7 +315,8 @@ def build_order_status_transactional_email(
     inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
     brand_alt = (
         (
-            (getattr(workspace, "marketplace_title", None) or getattr(workspace, "name", None) or "")
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
             .strip()
             if workspace is not None
             else ""
@@ -345,26 +372,21 @@ def build_client_activation_transactional_email(
     company = (company_name or "").strip() or "tu empresa"
     accent = _cta_background_hex(accent_hex)
     greet = (contact_first_line or "").strip()
+    # Checkout y ficha de empresa exigen correo; quien llama a esta plantilla (activación
+    # tras aprobación) crea el usuario con ese mismo correo → login_email siempre informado.
     access_email = (login_email or "").strip()
 
     subject = f"{mp}: activa tu acceso al marketplace"
     headline = "Tu solicitud fue aprobada"
-    if access_email:
-        lead_main = (
-            "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña. "
-            f"Para iniciar sesión en el marketplace, usa siempre este correo: {access_email}."
-        )
-    else:
-        lead_main = (
-            "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña "
-            "y gestionar pedidos y reservas en el marketplace."
-        )
+    lead_main = (
+        "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña."
+    )
     lead = f"{greet} {lead_main}".strip() if greet else lead_main
 
-    rows: list[tuple[str, str]] = []
-    if access_email:
-        rows.append(("Correo para iniciar sesión", access_email))
-    rows.append(("Empresa", company))
+    rows: list[tuple[str, str]] = [
+        ("Correo para iniciar sesión", access_email),
+        ("Empresa", company),
+    ]
     footer = (
         "El enlace caduca en 14 días. Inicia sesión con el correo indicado arriba y la contraseña "
         "que definas con el botón. Este mensaje lo envía el sistema de notificaciones del marketplace."
@@ -373,7 +395,8 @@ def build_client_activation_transactional_email(
     inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
     brand_alt = (
         (
-            (getattr(workspace, "marketplace_title", None) or getattr(workspace, "name", None) or "")
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
             .strip()
             if workspace is not None
             else ""
@@ -401,7 +424,8 @@ def build_client_activation_transactional_email(
     return subject, "\n".join(text_lines), html_body, inline_logo
 
 
-OrderClientActivityKind = Literal["payment_receipt", "negotiation_signed", "art_upload"]
+OrderClientActivityKind = Literal["payment_receipt",
+                                  "negotiation_signed", "art_upload"]
 
 
 def build_order_client_activity_admin_email(
@@ -415,7 +439,7 @@ def build_order_client_activity_admin_email(
     workspace,
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
     """
-    Aviso al equipo del marketplace cuando el cliente añade documentación al pedido
+    Aviso al equipo del marketplace cuando la empresa añade documentación al pedido
     (sin cambio de estado).
     """
     mp = (marketplace_title or "").strip() or "Marketplace"
@@ -458,7 +482,8 @@ def build_order_client_activity_admin_email(
     inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
     brand_alt = (
         (
-            (getattr(workspace, "marketplace_title", None) or getattr(workspace, "name", None) or "")
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
             .strip()
             if workspace is not None
             else ""
@@ -482,5 +507,6 @@ def build_order_client_activity_admin_email(
     for label, value in rows:
         if (value or "").strip():
             lines.append(f"{label}: {value}")
-    lines.extend(["", f"Ir al panel de pedidos: {orders_admin_url}", "", footer])
+    lines.extend(
+        ["", f"Ir al panel de pedidos: {orders_admin_url}", "", footer])
     return subject, "\n".join(lines), html_body, inline_logo

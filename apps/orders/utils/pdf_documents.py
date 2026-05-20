@@ -176,7 +176,7 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     center_name = sc.name
     tenant = client.company_name
     rif = (client.rif or "").strip() or "—"
-    rep = (client.representative_name or client.contact_name or "").strip() or "—"
+    rep = (client.representative_name or "").strip() or "—"
     rep_ci = (client.representative_id_number or "").strip()
     rep_line = rep
     if rep_ci:
@@ -259,7 +259,7 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     story.append(Spacer(1, 0.5 * cm))
     story.append(
         Paragraph(
-            "<i>(*) Los impuestos municipales serán cancelados por el cliente.</i>",
+            "<i>(*) Los impuestos municipales serán cancelados por la empresa.</i>",
             small_st,
         )
     )
@@ -440,7 +440,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
         Paragraph(f"<b>Nº referencia:</b> {_escape(inv_no)}", body_st))
     story.append(Spacer(1, 0.3 * cm))
     story.append(Paragraph(
-        f"<b>Cliente:</b> {_escape(client.company_name)} &nbsp; RIF: {_escape((client.rif or '').strip() or '—')}", body_st))
+        f"<b>Empresa:</b> {_escape(client.company_name)} &nbsp; RIF: {_escape((client.rif or '').strip() or '—')}", body_st))
     story.append(Spacer(1, 0.5 * cm))
     cell_st, head_st, _ = _table_paragraph_styles()
     inv_cell = ParagraphStyle(
@@ -506,7 +506,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
 
 
 def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
-    """Solicitud de permiso de instalación enviada por el cliente (PDF interno / correo)."""
+    """Solicitud de permiso de instalación enviada por la empresa (PDF interno / correo)."""
     client = order.client
     items = list(order.items.select_related(
         "ad_space", "ad_space__shopping_center").all())
@@ -551,8 +551,8 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
         ]
 
     data = [
-        row("Cliente", (client.company_name or "").strip() or "—"),
-        row("RIF cliente", (client.rif or "").strip() or "—"),
+        row("Empresa", (client.company_name or "").strip() or "—"),
+        row("RIF empresa", (client.rif or "").strip() or "—"),
         row("Centro comercial", center_name),
         row("Tomas / elementos", codes),
         row("Fecha de montaje indicada",

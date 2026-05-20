@@ -40,7 +40,7 @@ class OrderStatus(models.TextChoices):
     INSTALLATION = "installation", "Instalación"
     ACTIVE = "active", "Activa"
     EXPIRED = "expired", "Vencida"
-    CANCELLED = "cancelled", "Cancelada"
+    CANCELLED = "cancelled", "Rechazada"
 
 
 class Order(TimeStampedActiveModel):

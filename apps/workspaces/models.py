@@ -191,7 +191,7 @@ class Workspace(TimeStampedActiveModel):
     transactional_email_from_address = models.EmailField(
         "Dirección remitente (From)",
         blank=True,
-        help_text="Correo que verán admin y cliente en notificaciones de pedidos.",
+        help_text="Correo que verán administradores y la empresa en notificaciones de pedidos.",
     )
     transactional_email_from_name = models.CharField(
         "Nombre remitente (opcional)",

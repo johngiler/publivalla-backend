@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.clients.models import Client, ClientStatus
+from apps.clients.validators import normalize_client_rif_required
 from apps.users.models import UserProfile
 from apps.users.utils import is_platform_staff
 from apps.workspaces.tenant import get_workspace_for_request
@@ -45,6 +46,17 @@ class ClientAdminSerializer(serializers.ModelSerializer):
             "cover_image": {"required": False, "allow_null": True},
         }
 
+    def validate_rif(self, value):
+        incoming = (value or "").strip() if value is not None else ""
+        if self.instance is not None:
+            existing = (self.instance.rif or "").strip()
+            if incoming:
+                return normalize_client_rif_required(incoming)
+            if existing:
+                return existing
+            return normalize_client_rif_required("")
+        return normalize_client_rif_required(value)
+
     def get_linked_user_ids(self, obj):
         return sorted(obj.member_profiles.values_list("user_id", flat=True))
 
@@ -62,12 +74,7 @@ class ClientAdminSerializer(serializers.ModelSerializer):
 
 
 class MyCompanySerializer(serializers.ModelSerializer):
-    rif = serializers.CharField(
-        max_length=32,
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-    )
+    rif = serializers.CharField(max_length=32, required=True, allow_blank=False)
 
     class Meta:
         model = Client
@@ -88,10 +95,14 @@ class MyCompanySerializer(serializers.ModelSerializer):
         }
 
     def validate_rif(self, value):
-        if value is None:
-            return None
-        s = str(value).strip()
-        return s if s else None
+        instance = getattr(self, "instance", None)
+        existing = (instance.rif or "").strip() if instance else ""
+        s = str(value or "").strip()
+        if s:
+            return normalize_client_rif_required(s)
+        if existing:
+            return existing
+        return normalize_client_rif_required(value)
 
     def create(self, validated_data):
         request = self.context["request"]

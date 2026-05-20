@@ -525,6 +525,7 @@ def try_send_order_status_emails(
             accent_hex=accent,
             workspace=ws,
             client_has_marketplace_account=client_has_marketplace_user(order.client),
+            to_status=to_status,
         )
         if not send_workspace_transactional_email(
             ws,

@@ -134,7 +134,7 @@ class AdminDashboardActivityView(APIView):
                     "id": f"client-{c.pk}",
                     "kind": "client_created",
                     "at": c.created_at,
-                    "title": "Cliente registrado en el panel",
+                    "title": "Empresa registrada en el panel",
                     "primary_line": (c.company_name or "Empresa sin nombre comercial").strip(),
                     "secondary_line": f"RIF: {rif}" if rif else None,
                     "tertiary_line": (c.email or "").strip() or None,

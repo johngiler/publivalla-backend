@@ -40,13 +40,13 @@ class MyContractsView(APIView):
     def get(self, request):
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Esta sección es solo para clientes del marketplace."},
+                {"detail": "Esta sección es solo para cuentas de empresa en el marketplace."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None:
             return Response(
-                {"detail": "No tienes una empresa cliente asociada."},
+                {"detail": "No tienes una empresa asociada."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -163,13 +163,13 @@ class MyFavoritesView(APIView):
     def get(self, request):
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Esta sección es solo para clientes del marketplace."},
+                {"detail": "Esta sección es solo para cuentas de empresa en el marketplace."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None:
             return Response(
-                {"detail": "No tienes una empresa cliente asociada."},
+                {"detail": "No tienes una empresa asociada."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -216,13 +216,13 @@ class MyFavoritesView(APIView):
     def post(self, request):
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Esta sección es solo para clientes del marketplace."},
+                {"detail": "Esta sección es solo para cuentas de empresa en el marketplace."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None:
             return Response(
-                {"detail": "No tienes una empresa cliente asociada."},
+                {"detail": "No tienes una empresa asociada."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -274,13 +274,13 @@ class MyFavoriteDetailView(APIView):
     def delete(self, request, ad_space_id: int):
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Esta sección es solo para clientes del marketplace."},
+                {"detail": "Esta sección es solo para cuentas de empresa en el marketplace."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None:
             return Response(
-                {"detail": "No tienes una empresa cliente asociada."},
+                {"detail": "No tienes una empresa asociada."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

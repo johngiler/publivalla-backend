@@ -69,6 +69,8 @@ class ClientViewSet(AdminModelViewSet):
                     | Q(rif__icontains=search)
                     | Q(email__icontains=search)
                     | Q(contact_name__icontains=search)
+                    | Q(representative_name__icontains=search)
+                    | Q(representative_id_number__icontains=search)
                 )
         return qs
 
@@ -79,7 +81,7 @@ class ClientViewSet(AdminModelViewSet):
             return Response(
                 {
                     "detail": (
-                        f"Este cliente tiene {n} pedido(s) relacionado(s). "
+                        f"Esta empresa tiene {n} pedido(s) relacionado(s). "
                         "Elimina o reasigna esos pedidos antes de borrar la empresa."
                     ),
                     "code": "client_has_orders",

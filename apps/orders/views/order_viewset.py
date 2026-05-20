@@ -345,7 +345,7 @@ class OrderViewSet(
         f = order.negotiation_sheet_signed
         if not f or not getattr(f, "name", ""):
             return Response(
-                {"detail": "El cliente aún no ha subido la hoja firmada."},
+                {"detail": "La empresa aún no ha subido la hoja firmada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         try:
@@ -439,13 +439,13 @@ class OrderViewSet(
         order = self.get_object()
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Los artes los sube el cliente desde su cuenta."},
+                {"detail": "Los artes los sube la empresa desde su cuenta."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None or order.client_id != client.pk:
             return Response(
-                {"detail": "Solo el cliente dueño puede subir artes."},
+                {"detail": "Solo la cuenta de la empresa dueña puede subir artes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         if order.status != OrderStatus.PAID:
@@ -544,13 +544,13 @@ class OrderViewSet(
         order = self.get_object()
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Los artes los gestiona el cliente desde su cuenta."},
+                {"detail": "Los artes los gestiona la empresa desde su cuenta."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
         if client is None or order.client_id != client.pk:
             return Response(
-                {"detail": "Solo el cliente dueño puede eliminar artes."},
+                {"detail": "Solo la cuenta de la empresa dueña puede eliminar artes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         if order.status != OrderStatus.PAID:
@@ -624,7 +624,7 @@ class OrderViewSet(
         client = get_marketplace_client(request.user)
         if client is None or order.client_id != client.pk:
             return Response(
-                {"detail": "Solo el cliente dueño puede registrar proveedores desde el pedido."},
+                {"detail": "Solo la cuenta de la empresa dueña puede registrar proveedores desde el pedido."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -656,7 +656,7 @@ class OrderViewSet(
         order = self.get_object()
         if user_is_admin(request.user):
             return Response(
-                {"detail": "Este envío lo realiza el cliente."},
+                {"detail": "Este envío lo realiza la empresa."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         client = get_marketplace_client(request.user)
