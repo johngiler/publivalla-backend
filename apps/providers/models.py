@@ -21,6 +21,11 @@ class MountingProvider(TimeStampedActiveModel):
     email = models.EmailField(blank=True, default="")
     rif = models.CharField(max_length=32, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    staff_members = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Personal autorizado en sitio: [{"full_name": "...", "id_number": "V-..."}].',
+    )
     sort_order = models.PositiveSmallIntegerField(default=0)
     shopping_centers = models.ManyToManyField(
         "malls.ShoppingCenter",

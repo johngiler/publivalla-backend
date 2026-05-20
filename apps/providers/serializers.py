@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.malls.models import ShoppingCenter
 from apps.providers.models import MountingProvider
+from apps.providers.validators import normalize_staff_members
 from apps.workspaces.tenant import get_workspace_for_request
 
 
@@ -18,6 +19,7 @@ class CatalogMountingProviderSerializer(serializers.ModelSerializer):
             "email",
             "rif",
             "notes",
+            "staff_members",
         )
 
 
@@ -52,6 +54,7 @@ class MountingProviderSerializer(serializers.ModelSerializer):
             "email",
             "rif",
             "notes",
+            "staff_members",
             "sort_order",
             "is_active",
             "created_at",
@@ -145,6 +148,10 @@ class MountingProviderSerializer(serializers.ModelSerializer):
             attrs["_workspace_id"] = ws.id
 
         attrs["_centers"] = centers
+        if "staff_members" in attrs:
+            attrs["staff_members"] = normalize_staff_members(attrs["staff_members"])
+        elif self.instance is None:
+            attrs["staff_members"] = []
         return attrs
 
     def create(self, validated_data):

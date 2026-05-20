@@ -35,6 +35,14 @@ _RECEIPT_ALLOWED_CT = frozenset(
 )
 
 
+def installation_permit_has_municipal_documents(permit) -> bool:
+    if permit is None:
+        return False
+    return bool(permit.municipal_permit_issued) and bool(
+        permit.municipal_tax_payment_receipt
+    )
+
+
 def validate_order_receipt_file(value):
     if value is None:
         return value
@@ -86,12 +94,8 @@ class OrderClientSnapshotSerializer(serializers.ModelSerializer):
 
 class OrderArtAttachmentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
-    order_item_code = serializers.CharField(
-        source="order_item.ad_space.code", read_only=True, allow_null=True
-    )
-    order_item_title = serializers.CharField(
-        source="order_item.ad_space.title", read_only=True, allow_null=True
-    )
+    order_item_code = serializers.SerializerMethodField()
+    order_item_title = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderArtAttachment
@@ -120,9 +124,31 @@ class OrderArtAttachmentSerializer(serializers.ModelSerializer):
             return None
         return f.url
 
+    def get_order_item_code(self, obj):
+        item = getattr(obj, "order_item", None)
+        if item is None:
+            return None
+        ad = getattr(item, "ad_space", None)
+        if ad is None:
+            return None
+        code = getattr(ad, "code", None)
+        return str(code).strip() if code else None
+
+    def get_order_item_title(self, obj):
+        item = getattr(obj, "order_item", None)
+        if item is None:
+            return None
+        ad = getattr(item, "ad_space", None)
+        if ad is None:
+            return None
+        title = getattr(ad, "title", None)
+        return str(title).strip() if title else None
+
 
 class OrderInstallationPermitSerializer(serializers.ModelSerializer):
     request_pdf_url = serializers.SerializerMethodField()
+    municipal_permit_issued_url = serializers.SerializerMethodField()
+    municipal_tax_payment_receipt_url = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderInstallationPermit
@@ -135,11 +161,25 @@ class OrderInstallationPermitSerializer(serializers.ModelSerializer):
             "municipal_reference",
             "created_at",
             "request_pdf_url",
+            "municipal_permit_issued_url",
+            "municipal_tax_payment_receipt_url",
         )
         read_only_fields = fields
 
     def get_request_pdf_url(self, obj):
         f = obj.request_pdf
+        if not f:
+            return None
+        return f.url
+
+    def get_municipal_permit_issued_url(self, obj):
+        f = obj.municipal_permit_issued
+        if not f:
+            return None
+        return f.url
+
+    def get_municipal_tax_payment_receipt_url(self, obj):
+        f = obj.municipal_tax_payment_receipt
         if not f:
             return None
         return f.url
@@ -457,6 +497,18 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
         if (
             new_status == OrderStatus.INVOICED
             and self.instance.status != OrderStatus.INVOICED
+            and self.instance.status == OrderStatus.CLIENT_APPROVED
+        ):
+            raise serializers.ValidationError(
+                {
+                    "status": (
+                        "Primero aprueba los artes (estado «Arte aprobado») antes de facturar."
+                    )
+                }
+            )
+        if (
+            new_status == OrderStatus.INVOICED
+            and self.instance.status != OrderStatus.INVOICED
             and not self.instance.negotiation_sheet_signed
         ):
             raise serializers.ValidationError(
@@ -464,6 +516,19 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                     "status": (
                         "El cliente debe subir la hoja de negociación firmada antes de pasar "
                         "el pedido a «Facturada»."
+                    )
+                }
+            )
+        if (
+            new_status == OrderStatus.INVOICED
+            and self.instance.status != OrderStatus.INVOICED
+            and self.instance.status == OrderStatus.ART_APPROVED
+            and not self.instance.art_attachments.exists()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "status": (
+                        "Faltan archivos de arte en el pedido; no se puede facturar sin artes cargados."
                     )
                 }
             )
@@ -484,7 +549,8 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
         if (
             new_status == OrderStatus.ART_APPROVED
             and self.instance.status != OrderStatus.ART_APPROVED
-            and self.instance.status == OrderStatus.PAID
+            and self.instance.status
+            in (OrderStatus.CLIENT_APPROVED, OrderStatus.PAID)
             and not self.instance.art_attachments.exists()
         ):
             raise serializers.ValidationError(
@@ -496,9 +562,22 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                 }
             )
         if (
+            new_status == OrderStatus.ART_APPROVED
+            and self.instance.status != OrderStatus.ART_APPROVED
+            and self.instance.status == OrderStatus.CLIENT_APPROVED
+            and not self.instance.negotiation_sheet_signed
+        ):
+            raise serializers.ValidationError(
+                {
+                    "status": (
+                        "El cliente debe subir la hoja de negociación firmada antes de aprobar los artes."
+                    )
+                }
+            )
+        if (
             new_status == OrderStatus.PERMIT_PENDING
             and self.instance.status != OrderStatus.PERMIT_PENDING
-            and self.instance.status == OrderStatus.ART_APPROVED
+            and self.instance.status == OrderStatus.PAID
             and not OrderInstallationPermit.objects.filter(
                 order_id=self.instance.pk
             ).exists()
@@ -511,6 +590,25 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+        if (
+            new_status == OrderStatus.INSTALLATION
+            and self.instance.status != OrderStatus.INSTALLATION
+            and self.instance.status == OrderStatus.PERMIT_PENDING
+        ):
+            try:
+                permit = self.instance.installation_permit
+            except OrderInstallationPermit.DoesNotExist:
+                permit = None
+            if not installation_permit_has_municipal_documents(permit):
+                raise serializers.ValidationError(
+                    {
+                        "status": (
+                            "La empresa debe subir el permiso emitido por la alcaldía y el "
+                            "comprobante del impuesto municipal desde Mis pedidos antes de pasar "
+                            "el pedido a «Instalación»."
+                        )
+                    }
+                )
         return attrs
 
     @transaction.atomic
@@ -785,16 +883,32 @@ class OrderInstallationPermitWriteSerializer(serializers.Serializer):
     )
 
     def validate_staff_members(self, value):
-        for row in value:
-            if not isinstance(row, dict):
-                raise serializers.ValidationError("Cada miembro debe ser un objeto con nombre y cédula.")
-            fn = (row.get("full_name") or "").strip()
-            nid = (row.get("id_number") or "").strip()
-            if not fn or not nid:
-                raise serializers.ValidationError(
-                    "Cada persona debe incluir full_name e id_number (cédula)."
-                )
-        return value
+        from apps.providers.validators import normalize_staff_members
+
+        return normalize_staff_members(value)
+
+    def validate(self, attrs):
+        from datetime import timedelta
+
+        order = self.context.get("order")
+        if order is None:
+            return attrs
+        items = list(order.items.all())
+        if not items:
+            return attrs
+        min_start = min(it.start_date for it in items)
+        earliest = min_start - timedelta(days=1)
+        md = attrs["mounting_date"]
+        if md < earliest:
+            raise serializers.ValidationError(
+                {
+                    "mounting_date": (
+                        "La fecha de montaje no puede ser anterior al día previo al inicio "
+                        f"del contrato ({earliest.strftime('%d/%m/%Y')})."
+                    )
+                }
+            )
+        return attrs
 
 
 class OrderItemWriteSerializer(serializers.Serializer):

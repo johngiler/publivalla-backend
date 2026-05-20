@@ -26,16 +26,16 @@ class OrderPaymentMethod(models.TextChoices):
 
 class OrderStatus(models.TextChoices):
     """
-    Orden = flujo comercial típico (el valor en BD no depende del orden declarado).
-    Arte aprobado va después de facturada y pagada (subida de artes con pedido pagado).
+    Flujo comercial (el valor en BD no depende del orden declarado):
+    solicitud aprobada → artes y hoja firmada → arte aprobado → facturada → pagada → permiso → …
     """
 
     DRAFT = "draft", "Borrador"
     SUBMITTED = "submitted", "Enviada"
     CLIENT_APPROVED = "client_approved", "Solicitud aprobada"
+    ART_APPROVED = "art_approved", "Arte aprobado"
     INVOICED = "invoiced", "Facturada"
     PAID = "paid", "Pagada"
-    ART_APPROVED = "art_approved", "Arte aprobado"
     PERMIT_PENDING = "permit_pending", "Permiso alcaldía"
     INSTALLATION = "installation", "Instalación"
     ACTIVE = "active", "Activa"
@@ -264,6 +264,18 @@ class OrderInstallationPermit(TimeStampedActiveModel):
         blank=True,
         null=True,
         help_text="PDF generado al enviar la solicitud (media/<slug>/orders/installation_permits/…; histórico: orders/installation_permits/…).",
+    )
+    municipal_permit_issued = models.FileField(
+        upload_to=order_installation_permit_pdf_upload,
+        blank=True,
+        null=True,
+        help_text="Permiso emitido por la alcaldía (PDF o imagen).",
+    )
+    municipal_tax_payment_receipt = models.FileField(
+        upload_to=order_installation_permit_pdf_upload,
+        blank=True,
+        null=True,
+        help_text="Soporte de pago del impuesto municipal (PDF o imagen).",
     )
 
     class Meta:

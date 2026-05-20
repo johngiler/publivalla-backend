@@ -26,6 +26,7 @@ from apps.orders.serializers import (
     OrderCreateSerializer,
     OrderInstallationPermitWriteSerializer,
     OrderSerializer,
+    validate_order_receipt_file,
 )
 from apps.orders.utils.pdf_documents import build_installation_permit_request_pdf_bytes
 from apps.orders.services import log_order_status_transition, submit_draft_order
@@ -67,6 +68,60 @@ def _build_order_list_search_q(search: str) -> Q:
 
 # Compat. con nombre anterior (autoreload puede dejar bytecode con la referencia vieja).
 _build_order_admin_list_search_q = _build_order_list_search_q
+
+
+def _art_upload_order_item_raw(request) -> str:
+    """Campo de línea en multipart (DRF expone `request.data`; Django también `POST`)."""
+    for key in ("order_item", "order_item_id"):
+        if hasattr(request, "data"):
+            val = request.data.get(key)
+            if val is not None and str(val).strip() != "":
+                return str(val).strip()
+        if hasattr(request, "POST"):
+            val = request.POST.get(key)
+            if val is not None and str(val).strip() != "":
+                return str(val).strip()
+    return ""
+
+
+def _resolve_order_item_for_art_upload(order, raw_item: str):
+    """
+    Devuelve la línea del pedido para un arte.
+    `raw_item` es el pk de OrderItem; si no coincide, acepta id de espacio si hay una sola línea con ese EP.
+    """
+    items = list(
+        OrderItem.objects.filter(order_id=order.pk)
+        .select_related("ad_space")
+        .order_by("id")
+    )
+    if not items:
+        return None, items
+    if len(items) == 1:
+        only = items[0]
+        if not raw_item:
+            return only, items
+        try:
+            want_id = int(raw_item)
+        except (TypeError, ValueError):
+            return None, items
+        if want_id == only.pk:
+            return only, items
+        if want_id == only.ad_space_id:
+            return only, items
+        return None, items
+    if not raw_item:
+        return None, items
+    try:
+        want_id = int(raw_item)
+    except (TypeError, ValueError):
+        return None, items
+    by_pk = next((it for it in items if it.pk == want_id), None)
+    if by_pk is not None:
+        return by_pk, items
+    by_space = [it for it in items if it.ad_space_id == want_id]
+    if len(by_space) == 1:
+        return by_space[0], items
+    return None, items
 
 
 # Estados entre envío y activación (no incluye borrador ni activa/vencida/cancel/rechazo).
@@ -448,11 +503,14 @@ class OrderViewSet(
                 {"detail": "Solo la cuenta de la empresa dueña puede subir artes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if order.status != OrderStatus.PAID:
+        if order.status != OrderStatus.CLIENT_APPROVED:
             return Response(
                 {
-                    "detail": "Solo puedes subir artes cuando el pedido está «Pagada».",
-                    "code": "order_not_paid_for_art",
+                    "detail": (
+                        "Solo puedes subir artes cuando el pedido está en «Solicitud aprobada», "
+                        "antes de la facturación."
+                    ),
+                    "code": "order_not_ready_for_art",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -464,51 +522,31 @@ class OrderViewSet(
         except drf_serializers.ValidationError as e:
             return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
 
-        items = list(order.items.select_related("ad_space").order_by("id"))
+        raw_item = _art_upload_order_item_raw(request)
+        chosen, items = _resolve_order_item_for_art_upload(order, raw_item)
         if not items:
             return Response(
                 {"detail": "El pedido no tiene líneas; no se pueden adjuntar artes."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        raw_item = (request.POST.get("order_item") or "").strip()
-        chosen = None
-        if len(items) == 1:
-            chosen = items[0]
+        if len(items) > 1 and not raw_item:
+            return Response(
+                {
+                    "detail": "Este pedido tiene varias tomas. Indica la línea en el campo «order_item» (id de la línea).",
+                    "code": "order_item_required_for_art",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if chosen is None:
             if raw_item:
-                try:
-                    want_id = int(raw_item)
-                except (TypeError, ValueError):
-                    return Response(
-                        {"detail": "El identificador de línea (order_item) no es válido."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                if want_id != chosen.pk:
-                    return Response(
-                        {"detail": "La línea indicada no corresponde a este pedido."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-        else:
-            if not raw_item:
-                return Response(
-                    {
-                        "detail": "Este pedido tiene varias tomas. Indica la línea en el campo «order_item» (id de la línea).",
-                        "code": "order_item_required_for_art",
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            try:
-                want_id = int(raw_item)
-            except (TypeError, ValueError):
-                return Response(
-                    {"detail": "El identificador de línea (order_item) no es válido."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            chosen = next((it for it in items if it.pk == want_id), None)
-            if chosen is None:
                 return Response(
                     {"detail": "La línea no pertenece a este pedido."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            return Response(
+                {"detail": "El identificador de línea (order_item) no es válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         OrderArtAttachment.objects.create(order=order, order_item=chosen, file=f)
         oid = order.pk
@@ -553,11 +591,13 @@ class OrderViewSet(
                 {"detail": "Solo la cuenta de la empresa dueña puede eliminar artes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if order.status != OrderStatus.PAID:
+        if order.status != OrderStatus.CLIENT_APPROVED:
             return Response(
                 {
-                    "detail": "Solo puedes eliminar artes cuando el pedido está «Pagada».",
-                    "code": "order_not_paid_for_art_delete",
+                    "detail": (
+                        "Solo puedes eliminar artes mientras el pedido está en «Solicitud aprobada»."
+                    ),
+                    "code": "order_not_ready_for_art_delete",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -665,10 +705,10 @@ class OrderViewSet(
                 {"detail": "No tienes permiso para este pedido."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if order.status != OrderStatus.ART_APPROVED:
+        if order.status != OrderStatus.PAID:
             return Response(
                 {
-                    "detail": "Solo puedes enviar la solicitud de permiso cuando el pedido está «Arte aprobado».",
+                    "detail": "Solo puedes enviar la solicitud de permiso cuando el pedido está «Pagada».",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -677,7 +717,10 @@ class OrderViewSet(
                 {"detail": "Ya existe una solicitud de permiso para este pedido."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        ser = OrderInstallationPermitWriteSerializer(data=request.data)
+        ser = OrderInstallationPermitWriteSerializer(
+            data=request.data,
+            context={"order": order, "request": request},
+        )
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
         perm = OrderInstallationPermit.objects.create(
@@ -711,5 +754,85 @@ class OrderViewSet(
             actor=request.user if request.user.is_authenticated else None,
             note="Cliente envió datos de solicitud de permiso de instalación.",
         )
+        order.refresh_from_db()
+        return Response(OrderSerializer(order, context=self.get_serializer_context()).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="installation-permit/municipal-documents",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def installation_permit_municipal_documents(self, request, pk=None):
+        from rest_framework import serializers as drf_serializers
+
+        order = self.get_object()
+        if user_is_admin(request.user):
+            return Response(
+                {"detail": "Estos documentos los sube la empresa."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        client = get_marketplace_client(request.user)
+        if client is None or order.client_id != client.pk:
+            return Response(
+                {"detail": "No tienes permiso para este pedido."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if order.status != OrderStatus.PERMIT_PENDING:
+            return Response(
+                {
+                    "detail": (
+                        "Solo puedes subir estos documentos cuando el pedido está en "
+                        "«Permiso alcaldía»."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            perm = order.installation_permit
+        except OrderInstallationPermit.DoesNotExist:
+            perm = None
+        if perm is None:
+            return Response(
+                {
+                    "detail": (
+                        "Primero debes enviar la solicitud de permiso de instalación."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        issued = request.FILES.get("municipal_permit_issued")
+        tax = request.FILES.get("municipal_tax_payment_receipt")
+        if not issued and not tax:
+            return Response(
+                {
+                    "detail": (
+                        "Adjunta al menos un archivo: permiso emitido por la alcaldía "
+                        "y/o comprobante del impuesto municipal."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for label, f in (
+            ("municipal_permit_issued", issued),
+            ("municipal_tax_payment_receipt", tax),
+        ):
+            if not f:
+                continue
+            try:
+                validate_order_receipt_file(f)
+            except drf_serializers.ValidationError as e:
+                return Response(
+                    {label: e.detail},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        update_fields = ["updated_at"]
+        if issued:
+            perm.municipal_permit_issued = issued
+            update_fields.append("municipal_permit_issued")
+        if tax:
+            perm.municipal_tax_payment_receipt = tax
+            update_fields.append("municipal_tax_payment_receipt")
+        perm.save(update_fields=update_fields)
         order.refresh_from_db()
         return Response(OrderSerializer(order, context=self.get_serializer_context()).data)

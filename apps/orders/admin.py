@@ -147,6 +147,8 @@ class OrderInstallationPermitAdmin(admin.ModelAdmin):
         "mounting_date",
         "installation_company_name",
         "municipal_reference",
+        "municipal_permit_issued",
+        "municipal_tax_payment_receipt",
         "is_active",
     )
     search_fields = ("order__code", "installation_company_name", "municipal_reference")
