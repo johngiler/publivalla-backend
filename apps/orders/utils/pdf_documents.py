@@ -192,15 +192,31 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     total_con_iva = (total + iva).quantize(Decimal("0.01"))
 
     monthly_lines = []
+    description_lines = []
     for it in items:
+        code = (it.ad_space.code or "").strip()
+        title = (it.ad_space.title or "").strip()
         monthly_lines.append(
-            f"${it.monthly_price:,.2f} USD / mes · {it.ad_space.code} — {it.ad_space.title}"
+            f"${it.monthly_price:,.2f} USD / mes"
+            + (f" · {code}" if code else "")
         )
+        if title:
+            description_lines.append(
+                f"{code} — {title}" if code else title
+            )
+        elif code:
+            description_lines.append(code)
     monthly_txt = "<br/>".join(_escape(x) for x in monthly_lines)
 
     pay_cond = (order.payment_conditions or "").strip(
     ) or "Según acuerdo comercial con el centro."
-    obs = (order.negotiation_observations or "").strip() or codes
+    user_obs = (order.negotiation_observations or "").strip()
+    obs_parts = []
+    if user_obs:
+        obs_parts.append(user_obs)
+    if description_lines:
+        obs_parts.append("\n".join(description_lines))
+    obs = "\n\n".join(obs_parts) if obs_parts else codes
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -239,7 +255,7 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
         row("CANON DE ARRENDAMIENTO MENSUAL", monthly_txt),
         row(
             "TOTAL NEGOCIACION",
-            f"${total:,.2f} USD más ${iva:,.2f} de IVA (total ${total_con_iva:,.2f} USD con IVA)",
+            f"${total_con_iva:,.2f} USD",
         ),
         row("CONDICIONES DE PAGO", pay_cond),
         row("OBSERVACIONES", obs),
