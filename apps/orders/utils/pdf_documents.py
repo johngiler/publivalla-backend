@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 
 from django.utils import timezone
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
@@ -326,8 +327,9 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     )
     date_str = f"{now.day} de {meses[now.month - 1]} de {now.year}"
 
-    authority = (sc.municipal_authority_line or "").strip(
-    ) or "Sres. Alcaldía Municipio correspondiente"
+    authority = (sc.municipal_authority_line or "").strip() or (
+        "Sres. Alcaldía Municipio correspondiente"
+    )
     tenant = client.company_name
     rif = (client.rif or "").strip() or "—"
 
@@ -391,7 +393,13 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
         tipo = it.ad_space.get_type_display() if hasattr(
             it.ad_space, "get_type_display") else it.ad_space.type
         ubic = (it.ad_space.venue_zone or it.ad_space.location_description or it.ad_space.title or "").strip() or "—"
-        obs = (it.ad_space.installation_notes or "").strip() or "—"
+        cara = (
+            "Elemento a doble cara"
+            if it.ad_space.double_sided
+            else "Elemento a una cara"
+        )
+        notes = (it.ad_space.installation_notes or "").strip()
+        obs = f"{cara}. {notes}" if notes else cara
         table_data.append(
             [
                 _p_cell(str(tipo), cell_st),
@@ -424,7 +432,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     lessor_rif = (sc.lessor_rif or "").strip() or "—"
     story.append(
         Paragraph(
-            f"<b>Coordinación de Mercadeo</b><br/>{_escape(lessor)}<br/>RIF {_escape(lessor_rif)}",
+            f"<b>Gerencia de Mercadeo</b><br/>{_escape(lessor)}<br/>RIF {_escape(lessor_rif)}",
             ParagraphStyle("sig", parent=body_st,
                            alignment=TA_CENTER, fontSize=9),
         )

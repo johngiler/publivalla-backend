@@ -370,9 +370,9 @@ class OrderViewSet(
     @action(detail=True, methods=["get"], url_path="download-municipality-letter")
     def download_municipality_letter(self, request, pk=None):
         order = self.get_object()
-        if not user_is_admin(request.user):
+        if not self._ensure_order_access(request, order):
             return Response(
-                {"detail": "Solo el equipo del marketplace puede descargar la carta al municipio."},
+                {"detail": "No tienes permiso para descargar este documento."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         ref = (order.code or str(order.pk)).replace("#", "").replace("/", "-")
