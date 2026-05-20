@@ -14,7 +14,11 @@ from rest_framework.views import APIView
 
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.clients.models import Client, ClientStatus
-from apps.clients.validators import normalize_client_rif_required
+from apps.clients.validators import (
+    normalize_client_rif_required,
+    normalize_representative_id_number,
+    normalize_representative_name,
+)
 from apps.orders.models import Order, OrderItem, OrderPaymentMethod, OrderStatus
 from apps.orders.serializers import OrderItemWriteSerializer, OrderSerializer
 from apps.orders.services import submit_draft_order
@@ -186,12 +190,8 @@ class GuestCheckoutSerializer(serializers.Serializer):
     company_name = serializers.CharField(max_length=255)
     rif = serializers.CharField(max_length=32)
     contact_name = serializers.CharField(max_length=255)
-    representative_name = serializers.CharField(
-        max_length=255, required=False, allow_blank=True, default=""
-    )
-    representative_id_number = serializers.CharField(
-        max_length=32, required=False, allow_blank=True, default=""
-    )
+    representative_name = serializers.CharField(max_length=255)
+    representative_id_number = serializers.CharField(max_length=32)
     email = serializers.EmailField()
     phone = serializers.CharField(max_length=32)
     address = serializers.CharField(
@@ -234,6 +234,12 @@ class GuestCheckoutSerializer(serializers.Serializer):
         if not s:
             raise serializers.ValidationError("Indica el nombre de contacto.")
         return s
+
+    def validate_representative_name(self, value):
+        return normalize_representative_name(value)
+
+    def validate_representative_id_number(self, value):
+        return normalize_representative_id_number(value)
 
     def validate_phone(self, value):
         s = (value or "").strip()

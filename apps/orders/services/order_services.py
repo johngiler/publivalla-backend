@@ -97,6 +97,19 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
     if order.status != OrderStatus.DRAFT:
         raise serializers.ValidationError({"detail": "Solo se pueden enviar órdenes en borrador."})
 
+    from apps.clients.validators import client_has_representative_fields
+
+    order = Order.objects.select_related("client").get(pk=order.pk)
+    if not client_has_representative_fields(order.client):
+        raise serializers.ValidationError(
+            {
+                "detail": (
+                    "Completa el representante legal y su cédula en Mi empresa "
+                    "antes de enviar la solicitud."
+                ),
+            }
+        )
+
     from apps.orders.utils.rental_billing import (
         contract_meets_minimum,
         line_subtotal_for_center,

@@ -1,7 +1,10 @@
 from rest_framework import serializers
 
 from apps.clients.models import Client, ClientStatus
-from apps.clients.validators import normalize_client_rif_required
+from apps.clients.validators import (
+    normalize_client_representative_fields,
+    normalize_client_rif_required,
+)
 from apps.users.models import UserProfile
 from apps.users.utils import is_platform_staff
 from apps.workspaces.tenant import get_workspace_for_request
@@ -57,6 +60,24 @@ class ClientAdminSerializer(serializers.ModelSerializer):
             return normalize_client_rif_required("")
         return normalize_client_rif_required(value)
 
+    def validate(self, attrs):
+        inst = self.instance
+        rep_name = attrs.get(
+            "representative_name",
+            getattr(inst, "representative_name", None) if inst else None,
+        )
+        rep_ci = attrs.get(
+            "representative_id_number",
+            getattr(inst, "representative_id_number", None) if inst else None,
+        )
+        rep_name, rep_ci = normalize_client_representative_fields(
+            representative_name=rep_name,
+            representative_id_number=rep_ci,
+        )
+        attrs["representative_name"] = rep_name
+        attrs["representative_id_number"] = rep_ci
+        return attrs
+
     def get_linked_user_ids(self, obj):
         return sorted(obj.member_profiles.values_list("user_id", flat=True))
 
@@ -103,6 +124,24 @@ class MyCompanySerializer(serializers.ModelSerializer):
         if existing:
             return existing
         return normalize_client_rif_required(value)
+
+    def validate(self, attrs):
+        inst = self.instance
+        rep_name = attrs.get(
+            "representative_name",
+            getattr(inst, "representative_name", None) if inst else None,
+        )
+        rep_ci = attrs.get(
+            "representative_id_number",
+            getattr(inst, "representative_id_number", None) if inst else None,
+        )
+        rep_name, rep_ci = normalize_client_representative_fields(
+            representative_name=rep_name,
+            representative_id_number=rep_ci,
+        )
+        attrs["representative_name"] = rep_name
+        attrs["representative_id_number"] = rep_ci
+        return attrs
 
     def create(self, validated_data):
         request = self.context["request"]
