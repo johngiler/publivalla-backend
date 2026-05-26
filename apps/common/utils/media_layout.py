@@ -189,6 +189,11 @@ def order_generated_document_upload(instance, filename: str) -> str:
     return _order_file_upload(instance, filename, "orders", "generated")
 
 
+def order_invoice_digital_upload(instance, filename: str) -> str:
+    """Factura digital externa subida por el admin (PDF o imagen)."""
+    return _order_file_upload(instance, filename, "orders", "invoices-external")
+
+
 def order_signed_document_upload(instance, filename: str) -> str:
     return _order_file_upload(instance, filename, "orders", "signed")
 

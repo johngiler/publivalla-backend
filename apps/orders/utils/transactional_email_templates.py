@@ -71,6 +71,7 @@ def _render_transactional_shell(
     accent_hex: str,
     inline_logo: tuple[bytes, str, str] | None,
     tenant_logo_alt: str,
+    mounting_section_html: str = "",
 ) -> str:
     logo_row = workspace_email_logo_header_row(
         inline_logo, alt=tenant_logo_alt)
@@ -87,6 +88,14 @@ def _render_transactional_shell(
         )
 
     accent = _safe(accent_hex)
+    mounting_block = ""
+    if (mounting_section_html or "").strip():
+        mounting_block = f"""
+          <tr>
+            <td style="padding:12px 24px 4px;">
+              {mounting_section_html}
+            </td>
+          </tr>"""
     cta_block = ""
     if (cta_url or "").strip() and (cta_label or "").strip():
         cta_block = f"""
@@ -130,6 +139,7 @@ def _render_transactional_shell(
               </table>
             </td>
           </tr>
+          {mounting_block}
           {cta_block}
           <tr>
             <td style="padding:16px 24px 28px;border-top:1px solid #f4f4f5;border-radius:0 0 16px 16px;font:12px/1.5 system-ui,sans-serif;color:#71717a;">
@@ -157,6 +167,7 @@ def build_order_status_transactional_email(
     workspace,
     client_has_marketplace_account: bool = True,
     to_status: str = "",
+    mounting_provider_groups: list | None = None,
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
     """
     Construye asunto, cuerpo texto plano, HTML y datos del logo inline (o ``None``).
@@ -177,6 +188,15 @@ def build_order_status_transactional_email(
     company = (company_name or "").strip() or "—"
     accent = _cta_background_hex(accent_hex)
     rejected = (to_status or "").strip() == OrderStatus.CANCELLED
+    approved = (to_status or "").strip() == OrderStatus.CLIENT_APPROVED
+    from apps.orders.utils.order_mounting_provider_email import (
+        mounting_providers_html_block,
+        mounting_providers_plain_text,
+    )
+
+    groups = mounting_provider_groups if mounting_provider_groups is not None else []
+    mounting_html = mounting_providers_html_block(groups) if approved else ""
+    mounting_plain = mounting_providers_plain_text(groups) if approved else ""
 
     if audience == "client":
         if rejected:
@@ -190,6 +210,11 @@ def build_order_status_transactional_email(
             subject = f"{mp}: tu pedido pasó a «{new_l}»"
             headline = "Actualización de tu pedido"
             lead = f"Tu pedido cambió de estado. Ahora figura como «{new_l}»."
+            if approved and mounting_plain:
+                lead = (
+                    f"{lead} A continuación encontrarás el contacto de las empresas de "
+                    "montaje autorizadas en los centros de tu reserva."
+                )
         rows: list[tuple[str, str]] = []
         if code:
             rows.append(("Referencia", code))
@@ -334,6 +359,7 @@ def build_order_status_transactional_email(
         accent_hex=accent,
         inline_logo=inline_logo,
         tenant_logo_alt=brand_alt,
+        mounting_section_html=mounting_html if audience == "client" else "",
     )
 
     lines = [
@@ -345,6 +371,8 @@ def build_order_status_transactional_email(
     for label, value in rows:
         if (value or "").strip():
             lines.append(f"{label}: {value}")
+    if audience == "client" and mounting_plain:
+        lines.extend(["", mounting_plain])
     if include_cta:
         lines.extend(
             [
@@ -366,8 +394,14 @@ def build_client_activation_transactional_email(
     login_email: str,
     accent_hex: str | None,
     workspace,
+    mounting_provider_groups: list | None = None,
 ) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
     """Correo de activación tras aprobación (misma envoltura visual y logo del ``workspace``)."""
+    from apps.orders.utils.order_mounting_provider_email import (
+        mounting_providers_html_block,
+        mounting_providers_plain_text,
+    )
+
     mp = (marketplace_title or "").strip() or "Marketplace"
     company = (company_name or "").strip() or "tu empresa"
     accent = _cta_background_hex(accent_hex)
@@ -376,11 +410,20 @@ def build_client_activation_transactional_email(
     # tras aprobación) crea el usuario con ese mismo correo → login_email siempre informado.
     access_email = (login_email or "").strip()
 
+    groups = mounting_provider_groups if mounting_provider_groups is not None else []
+    mounting_html = mounting_providers_html_block(groups)
+    mounting_plain = mounting_providers_plain_text(groups)
+
     subject = f"{mp}: activa tu acceso al marketplace"
     headline = "Tu solicitud fue aprobada"
     lead_main = (
         "Tu solicitud fue aprobada. Usa el botón de abajo para crear tu contraseña."
     )
+    if mounting_plain:
+        lead_main = (
+            f"{lead_main} A continuación encontrarás el contacto de las empresas de "
+            "montaje autorizadas en los centros de tu reserva."
+        )
     lead = f"{greet} {lead_main}".strip() if greet else lead_main
 
     rows: list[tuple[str, str]] = [
@@ -414,12 +457,15 @@ def build_client_activation_transactional_email(
         accent_hex=accent,
         inline_logo=inline_logo,
         tenant_logo_alt=brand_alt,
+        mounting_section_html=mounting_html,
     )
 
     text_lines = [headline, "", lead, ""]
     for label, value in rows:
         if (value or "").strip():
             text_lines.append(f"{label}: {value}")
+    if mounting_plain:
+        text_lines.extend(["", mounting_plain])
     text_lines.extend(["", f"Crear contraseña: {activation_url}", "", footer])
     return subject, "\n".join(text_lines), html_body, inline_logo
 

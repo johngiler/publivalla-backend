@@ -18,7 +18,7 @@ from apps.orders.models import (
 )
 from apps.malls.models import ShoppingCenter
 from apps.providers.models import MountingProvider
-from apps.orders.services import default_invoice_number_for_order, log_order_status_transition
+from apps.orders.services import log_order_status_transition
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
@@ -54,6 +54,83 @@ def validate_order_receipt_file(value):
             "Formato no permitido. Usa JPG, PNG, WebP o PDF."
         )
     return value
+
+
+def validate_order_invoice_digital_file(value):
+    return validate_order_receipt_file(value)
+
+
+def order_has_external_invoice(order) -> bool:
+    return bool(getattr(getattr(order, "invoice_digital", None), "name", ""))
+
+
+def normalize_order_instagram_handle(value: str) -> str:
+    s = (value or "").strip()
+    if s.startswith("@"):
+        s = s[1:].strip()
+    return s
+
+
+class OrderReservationInfoWriteMixin(serializers.Serializer):
+    """Campos de contexto comercial recogidos en checkout."""
+
+    promotion_brand = serializers.CharField(max_length=255)
+    campaign_concept = serializers.CharField()
+    activity_description = serializers.CharField()
+    complementary_info = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
+    instagram_handle = serializers.CharField(
+        required=False, allow_blank=True, max_length=64, default=""
+    )
+
+    def validate_promotion_brand(self, value):
+        s = (value or "").strip()
+        if not s:
+            raise serializers.ValidationError("Indica la marca a promocionar.")
+        return s
+
+    def validate_campaign_concept(self, value):
+        s = (value or "").strip()
+        if not s:
+            raise serializers.ValidationError(
+                "Indica la campaña o concepto publicitario."
+            )
+        return s
+
+    def validate_activity_description(self, value):
+        s = (value or "").strip()
+        if not s:
+            raise serializers.ValidationError(
+                "Indica una reseña o descripción de la actividad."
+            )
+        return s
+
+    def validate_complementary_info(self, value):
+        return (value or "").strip()
+
+    def validate_instagram_handle(self, value):
+        return normalize_order_instagram_handle(value)
+
+
+def order_reservation_info_kwargs(data: dict, *, pop: bool = False) -> dict:
+    keys = (
+        "promotion_brand",
+        "campaign_concept",
+        "activity_description",
+        "complementary_info",
+        "instagram_handle",
+    )
+    out = {}
+    for key in keys:
+        if pop:
+            if key in ("complementary_info", "instagram_handle"):
+                out[key] = data.pop(key, "")
+            else:
+                out[key] = data.pop(key)
+        else:
+            out[key] = data.get(key, "")
+    return out
 
 
 def _status_label(value: str) -> str:
@@ -277,6 +354,9 @@ class OrderSerializer(serializers.ModelSerializer):
     negotiation_sheet_pdf_url = serializers.SerializerMethodField()
     municipality_authorization_pdf_url = serializers.SerializerMethodField()
     invoice_pdf_url = serializers.SerializerMethodField()
+    invoice_digital_url = serializers.SerializerMethodField()
+    invoice_file_url = serializers.SerializerMethodField()
+    has_external_invoice = serializers.SerializerMethodField()
     installation_permit_request_pdf_url = serializers.SerializerMethodField()
     negotiation_sheet_signed_url = serializers.SerializerMethodField()
     client_company_name = serializers.CharField(
@@ -306,13 +386,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "payment_method",
             "payment_method_label",
             "payment_receipt_url",
-            "payment_conditions",
-            "negotiation_observations",
-            "invoice_number",
+            "promotion_brand",
+            "campaign_concept",
+            "activity_description",
+            "complementary_info",
+            "instagram_handle",
             "installation_verified_at",
             "negotiation_sheet_pdf_url",
             "municipality_authorization_pdf_url",
             "invoice_pdf_url",
+            "invoice_digital_url",
+            "invoice_file_url",
+            "has_external_invoice",
             "installation_permit_request_pdf_url",
             "negotiation_sheet_signed_url",
             "items",
@@ -331,13 +416,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "payment_method",
             "payment_method_label",
             "payment_receipt_url",
-            "payment_conditions",
-            "negotiation_observations",
-            "invoice_number",
+            "promotion_brand",
+            "campaign_concept",
+            "activity_description",
+            "complementary_info",
+            "instagram_handle",
             "installation_verified_at",
             "negotiation_sheet_pdf_url",
             "municipality_authorization_pdf_url",
             "invoice_pdf_url",
+            "invoice_digital_url",
+            "invoice_file_url",
+            "has_external_invoice",
             "installation_permit_request_pdf_url",
             "negotiation_sheet_signed_url",
             "workspace_slug",
@@ -382,6 +472,17 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_invoice_pdf_url(self, obj):
         return self._file_url(obj.invoice_pdf)
+
+    def get_invoice_digital_url(self, obj):
+        return self._file_url(obj.invoice_digital)
+
+    def get_invoice_file_url(self, obj):
+        if order_has_external_invoice(obj):
+            return self._file_url(obj.invoice_digital)
+        return self._file_url(obj.invoice_pdf)
+
+    def get_has_external_invoice(self, obj):
+        return order_has_external_invoice(obj)
 
     def get_installation_permit_request_pdf_url(self, obj):
         from django.core.exceptions import ObjectDoesNotExist
@@ -468,16 +569,22 @@ class OrderClientPaymentPatchSerializer(serializers.ModelSerializer):
 
 
 class OrderAdminPatchSerializer(serializers.ModelSerializer):
-    """Administradores: estado, textos de negociación y referencia de factura."""
+    """Administradores: estado del pedido y factura digital."""
 
     class Meta:
         model = Order
         fields = (
             "status",
-            "payment_conditions",
-            "negotiation_observations",
-            "invoice_number",
+            "invoice_digital",
         )
+        extra_kwargs = {
+            "invoice_digital": {"required": False, "allow_null": True},
+        }
+
+    def validate_invoice_digital(self, value):
+        if value is None:
+            return value
+        return validate_order_invoice_digital_file(value)
 
     def validate(self, attrs):
         new_status = attrs.get("status", self.instance.status)
@@ -618,27 +725,17 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
         from apps.orders.utils.document_generation import (
             generate_invoice_pdf_for_order,
             generate_negotiation_and_municipality_pdfs,
-            regenerate_negotiation_sheet_pdf_for_order,
         )
 
         logger = logging.getLogger(__name__)
-        old_pc = instance.payment_conditions
-        old_no = instance.negotiation_observations
-        old_inv = instance.invoice_number
 
         prev = instance.status
-        new_status = validated_data.get("status", instance.status)
-        if new_status == OrderStatus.INVOICED and prev != OrderStatus.INVOICED:
-            inv = validated_data.get("invoice_number", instance.invoice_number)
-            if inv is None:
-                inv = ""
-            else:
-                inv = str(inv).strip()
-            if not inv:
-                validated_data["invoice_number"] = default_invoice_number_for_order(instance)
-            else:
-                validated_data["invoice_number"] = inv[:64]
         instance = super().update(instance, validated_data)
+        if validated_data.get("invoice_digital"):
+            from apps.orders.utils.document_generation import _delete_field_file
+
+            _delete_field_file(instance, "invoice_pdf")
+            instance.save(update_fields=["invoice_pdf", "updated_at"])
         if prev != instance.status:
             request = self.context.get("request")
             actor = request.user if request and request.user.is_authenticated else None
@@ -694,24 +791,31 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                     ) from exc
                 instance.refresh_from_db()
             if instance.status == OrderStatus.INVOICED and prev != OrderStatus.INVOICED:
-                try:
-                    generate_invoice_pdf_for_order(instance)
-                except Exception as exc:
-                    logger.exception("Fallo al generar factura PDF: %s", exc)
-                    Order.objects.filter(pk=instance.pk).update(status=prev)
-                    instance.status = prev
-                    last_ev = OrderStatusEvent.objects.filter(order_id=instance.pk).order_by("-id").first()
-                    if last_ev and last_ev.to_status == OrderStatus.INVOICED:
-                        last_ev.delete()
-                    raise serializers.ValidationError(
-                        {
-                            "status": (
-                                "No se pudo generar la factura PDF. Corrige los datos e inténtalo de nuevo."
-                            ),
-                            "detail": str(exc),
-                        }
-                    ) from exc
                 instance.refresh_from_db()
+                if not order_has_external_invoice(instance):
+                    try:
+                        generate_invoice_pdf_for_order(instance)
+                    except Exception as exc:
+                        logger.exception("Fallo al generar factura PDF: %s", exc)
+                        Order.objects.filter(pk=instance.pk).update(status=prev)
+                        instance.status = prev
+                        last_ev = OrderStatusEvent.objects.filter(order_id=instance.pk).order_by("-id").first()
+                        if last_ev and last_ev.to_status == OrderStatus.INVOICED:
+                            last_ev.delete()
+                        raise serializers.ValidationError(
+                            {
+                                "status": (
+                                    "No se pudo generar la factura PDF. Corrige los datos e inténtalo de nuevo."
+                                ),
+                                "detail": str(exc),
+                            }
+                        ) from exc
+                    instance.refresh_from_db()
+                else:
+                    from apps.orders.utils.document_generation import _delete_field_file
+
+                    _delete_field_file(instance, "invoice_pdf")
+                    instance.save(update_fields=["invoice_pdf", "updated_at"])
             if (
                 instance.status == OrderStatus.ACTIVE
                 and prev == OrderStatus.INSTALLATION
@@ -722,41 +826,6 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                     installation_verified_at=dj_tz.now()
                 )
                 instance.refresh_from_db(fields=["installation_verified_at"])
-        elif prev == instance.status:
-            ne_changed = (instance.payment_conditions or "") != (old_pc or "") or (
-                instance.negotiation_observations or ""
-            ) != (old_no or "")
-            inv_changed = (str(instance.invoice_number or "").strip() != str(old_inv or "").strip())
-            if ne_changed and bool(getattr(instance.negotiation_sheet_pdf, "name", "")):
-                try:
-                    regenerate_negotiation_sheet_pdf_for_order(instance)
-                except Exception as exc:
-                    logger.exception("Fallo al regenerar PDF de negociación: %s", exc)
-                    raise serializers.ValidationError(
-                        {
-                            "detail": (
-                                "No se pudo regenerar la hoja de negociación con los nuevos textos. "
-                                "Revisa los datos e inténtalo de nuevo."
-                            ),
-                            "code": "negotiation_pdf_regen_failed",
-                        }
-                    ) from exc
-                instance.refresh_from_db()
-            if inv_changed and bool(getattr(instance.invoice_pdf, "name", "")):
-                try:
-                    generate_invoice_pdf_for_order(instance)
-                except Exception as exc:
-                    logger.exception("Fallo al regenerar factura PDF: %s", exc)
-                    raise serializers.ValidationError(
-                        {
-                            "detail": (
-                                "No se pudo regenerar el PDF de factura con el nuevo número. "
-                                "Revisa los datos e inténtalo de nuevo."
-                            ),
-                            "code": "invoice_pdf_regen_failed",
-                        }
-                    ) from exc
-                instance.refresh_from_db()
 
         return instance
 
@@ -972,7 +1041,7 @@ class OrderItemWriteSerializer(serializers.Serializer):
         return data
 
 
-class OrderCreateSerializer(serializers.Serializer):
+class OrderCreateSerializer(OrderReservationInfoWriteMixin, serializers.Serializer):
     client = serializers.PrimaryKeyRelatedField(
         queryset=Client.objects.all(),
         required=False,
@@ -1037,10 +1106,12 @@ class OrderCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         items_data = validated_data.pop("items")
         client = validated_data.pop("client")
+        reservation_info = order_reservation_info_kwargs(validated_data, pop=True)
         order = Order.objects.create(
             client=client,
             status=OrderStatus.DRAFT,
             total_amount=Decimal("0"),
+            **reservation_info,
         )
         total = Decimal("0")
         for row in items_data:

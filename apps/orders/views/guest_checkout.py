@@ -20,7 +20,12 @@ from apps.clients.validators import (
     normalize_representative_name,
 )
 from apps.orders.models import Order, OrderItem, OrderPaymentMethod, OrderStatus
-from apps.orders.serializers import OrderItemWriteSerializer, OrderSerializer
+from apps.orders.serializers import (
+    OrderItemWriteSerializer,
+    OrderReservationInfoWriteMixin,
+    OrderSerializer,
+    order_reservation_info_kwargs,
+)
 from apps.orders.services import submit_draft_order
 from apps.users.serializers import revoke_django_privileges
 from apps.users.models import UserProfile
@@ -186,7 +191,7 @@ class GuestCheckoutDatosValidateView(APIView):
         )
 
 
-class GuestCheckoutSerializer(serializers.Serializer):
+class GuestCheckoutSerializer(OrderReservationInfoWriteMixin, serializers.Serializer):
     company_name = serializers.CharField(max_length=255)
     rif = serializers.CharField(max_length=32)
     contact_name = serializers.CharField(max_length=255)
@@ -402,6 +407,7 @@ class GuestCheckoutView(APIView):
                     client=client,
                     status=OrderStatus.DRAFT,
                     total_amount=Decimal("0"),
+                    **order_reservation_info_kwargs(data),
                 )
                 total = Decimal("0")
                 for row in items_data:

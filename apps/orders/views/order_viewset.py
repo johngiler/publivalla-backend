@@ -442,6 +442,25 @@ class OrderViewSet(
                 status=status.HTTP_403_FORBIDDEN,
             )
         ref = (order.code or str(order.pk)).replace("#", "").replace("/", "-")
+        if order.invoice_digital and getattr(order.invoice_digital, "name", ""):
+            f = order.invoice_digital
+            try:
+                handle = f.open("rb")
+            except FileNotFoundError:
+                return Response(
+                    {"detail": "El archivo no está en el servidor."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            basename = os.path.basename(f.name) or f"factura-{ref}"
+            ctype, _ = mimetypes.guess_type(f.name)
+            if not ctype:
+                ctype = "application/octet-stream"
+            return FileResponse(
+                handle,
+                content_type=ctype,
+                as_attachment=True,
+                filename=basename,
+            )
         return self._pdf_file_response(order, "invoice_pdf", f"factura-{ref}.pdf")
 
     @action(detail=True, methods=["get"], url_path="download-installation-permit-request")

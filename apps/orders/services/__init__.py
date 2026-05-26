@@ -6,14 +6,12 @@ from apps.orders.services.order_hold_services import (
     order_hold_is_active,
 )
 from apps.orders.services.order_services import (
-    default_invoice_number_for_order,
     expire_active_orders_after_contract_end,
     log_order_status_transition,
     submit_draft_order,
 )
 
 __all__ = [
-    "default_invoice_number_for_order",
     "expire_active_orders_after_contract_end",
     "expire_submitted_order_holds",
     "log_order_status_transition",

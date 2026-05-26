@@ -209,12 +209,8 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
             description_lines.append(code)
     monthly_txt = "<br/>".join(_escape(x) for x in monthly_lines)
 
-    pay_cond = (order.payment_conditions or "").strip(
-    ) or "Según acuerdo comercial con el centro."
-    user_obs = (order.negotiation_observations or "").strip()
+    pay_cond = "Según acuerdo comercial con el centro."
     obs_parts = []
-    if user_obs:
-        obs_parts.append(user_obs)
     if description_lines:
         obs_parts.append("\n".join(description_lines))
     obs = "\n\n".join(obs_parts) if obs_parts else codes
@@ -451,7 +447,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     total = order.total_amount or Decimal("0")
     iva = (total * IVA_RATE).quantize(Decimal("0.01"))
     grand = (total + iva).quantize(Decimal("0.01"))
-    inv_no = (order.invoice_number or "").strip() or f"REF-{order.pk}"
+    order_ref = (order.code or "").strip() or f"#{order.pk}"
 
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm,
@@ -459,9 +455,9 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     title_st, body_st, _, _ = _styles()
     story = []
     _prepend_order_logo(story, order)
-    story.append(Paragraph("FACTURA / NOTA DE COBRO", title_st))
+    story.append(Paragraph("NOTA DE COBRO", title_st))
     story.append(
-        Paragraph(f"<b>Nº referencia:</b> {_escape(inv_no)}", body_st))
+        Paragraph(f"<b>Pedido:</b> {_escape(order_ref)}", body_st))
     story.append(Spacer(1, 0.3 * cm))
     story.append(Paragraph(
         f"<b>Empresa:</b> {_escape(client.company_name)} &nbsp; RIF: {_escape((client.rif or '').strip() or '—')}", body_st))

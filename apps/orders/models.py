@@ -5,6 +5,7 @@ from apps.common.models import TimeStampedActiveModel
 from apps.common.utils.media_layout import (
     order_art_attachment_upload,
     order_generated_document_upload,
+    order_invoice_digital_upload,
     order_installation_permit_pdf_upload,
     order_payment_receipt_upload,
     order_signed_document_upload,
@@ -70,6 +71,33 @@ class Order(TimeStampedActiveModel):
         null=True,
         help_text="Comprobante subido por el cliente en checkout (media/<slug>/orders/receipts/…; histórico: orders/receipts/…).",
     )
+    promotion_brand = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Marca a promocionar (checkout).",
+    )
+    campaign_concept = models.TextField(
+        blank=True,
+        default="",
+        help_text="Campaña o concepto publicitario (checkout).",
+    )
+    activity_description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Reseña o descripción de la actividad (checkout).",
+    )
+    complementary_info = models.TextField(
+        blank=True,
+        default="",
+        help_text="Información complementaria asociada (checkout).",
+    )
+    instagram_handle = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Cuenta de Instagram del cliente (checkout, sin @).",
+    )
     code = models.CharField(
         max_length=64,
         null=True,
@@ -77,16 +105,6 @@ class Order(TimeStampedActiveModel):
         unique=True,
         db_index=True,
         help_text="Código único de pedido (#SLUG-ORDER-000001). Se asigna al crear.",
-    )
-    payment_conditions = models.TextField(
-        blank=True,
-        default="",
-        help_text="Condiciones de pago (hoja de negociación).",
-    )
-    negotiation_observations = models.TextField(
-        blank=True,
-        default="",
-        help_text="Observaciones en hoja de negociación (líneas del pedido, texto libre).",
     )
     negotiation_sheet_pdf = models.FileField(
         upload_to=order_generated_document_upload,
@@ -106,17 +124,17 @@ class Order(TimeStampedActiveModel):
         null=True,
         help_text="Factura PDF generada al marcar como facturada (histórico: orders/generated/…).",
     )
+    invoice_digital = models.FileField(
+        upload_to=order_invoice_digital_upload,
+        blank=True,
+        null=True,
+        help_text="Factura digital externa subida por el admin (PDF o imagen); sustituye la nota de cobro generada.",
+    )
     negotiation_sheet_signed = models.FileField(
         upload_to=order_signed_document_upload,
         blank=True,
         null=True,
         help_text="Hoja de negociación firmada por el cliente (histórico: orders/signed/…).",
-    )
-    invoice_number = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        help_text="Número o referencia de factura (opcional, en PDF).",
     )
     installation_verified_at = models.DateTimeField(
         null=True,

@@ -44,7 +44,6 @@ class OrderAdmin(admin.ModelAdmin):
         "code",
         "client__company_name",
         "client__email",
-        "invoice_number",
     )
     raw_id_fields = ("client",)
     readonly_fields = ("code", "created_at", "updated_at")
@@ -71,9 +70,6 @@ class OrderAdmin(admin.ModelAdmin):
             {
                 "classes": ("collapse",),
                 "fields": (
-                    "payment_conditions",
-                    "negotiation_observations",
-                    "invoice_number",
                     "installation_verified_at",
                 ),
             },

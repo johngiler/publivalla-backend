@@ -52,33 +52,6 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
     )
 
 
-def regenerate_negotiation_sheet_pdf_for_order(order: Order) -> None:
-    """
-    Regenera la hoja de negociación PDF con los textos ya guardados en el pedido,
-    sustituyendo el archivo anterior. Elimina la hoja firmada: quedó asociada al PDF anterior.
-    """
-    from apps.orders.utils.pdf_documents import build_negotiation_sheet_pdf_bytes
-
-    order.refresh_from_db()
-    if not bool(getattr(order.negotiation_sheet_pdf, "name", "")):
-        return
-    neg = build_negotiation_sheet_pdf_bytes(order=order)
-    _delete_field_file(order, "negotiation_sheet_pdf")
-    _delete_field_file(order, "negotiation_sheet_signed")
-    order.negotiation_sheet_pdf.save(
-        f"negociacion_pedido_{order.pk}.pdf",
-        ContentFile(neg),
-        save=False,
-    )
-    order.save(
-        update_fields=[
-            "negotiation_sheet_pdf",
-            "negotiation_sheet_signed",
-            "updated_at",
-        ]
-    )
-
-
 def generate_invoice_pdf_for_order(order: Order) -> None:
     from apps.orders.utils.pdf_documents import build_invoice_pdf_bytes
 

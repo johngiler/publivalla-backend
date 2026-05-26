@@ -85,6 +85,12 @@ def notify_client_after_order_client_approved(order: Order) -> None:
     if not marketplace:
         marketplace = "Marketplace"
     accent = (getattr(ws, "primary_color", None) or "").strip() if ws else None
+
+    from apps.orders.utils.order_mounting_provider_email import (
+        order_mounting_provider_groups_by_center,
+    )
+
+    mounting_groups = order_mounting_provider_groups_by_center(order)
     subject, body, html_body, inline_logo = build_client_activation_transactional_email(
         marketplace_title=marketplace,
         company_name=client.company_name or "",
@@ -93,6 +99,7 @@ def notify_client_after_order_client_approved(order: Order) -> None:
         login_email=login_email,
         accent_hex=accent,
         workspace=ws,
+        mounting_provider_groups=mounting_groups,
     )
 
     if not send_workspace_transactional_email(

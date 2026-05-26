@@ -30,19 +30,6 @@ AUTO_EXPIRE_NOTE = (
 logger = logging.getLogger(__name__)
 
 
-def default_invoice_number_for_order(order: Order) -> str:
-    """
-    Número de factura sugerido al pasar a «Facturada» si no se indicó uno.
-    Basado en el código de pedido (#SLUG-ORDER-…) o en el id; recortado a 64 caracteres (campo BD).
-    """
-    code = (order.code or "").strip().replace("#", "").replace("/", "-").replace(" ", "")
-    if code:
-        base = f"FAC-{code}"
-    else:
-        base = f"FAC-{order.pk:06d}"
-    return base[:64]
-
-
 def log_order_status_transition(
     order: Order,
     from_status: str,
@@ -106,6 +93,20 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
                 "detail": (
                     "Completa el representante legal y su cédula en Mi empresa "
                     "antes de enviar la solicitud."
+                ),
+            }
+        )
+
+    if not (
+        (order.promotion_brand or "").strip()
+        and (order.campaign_concept or "").strip()
+        and (order.activity_description or "").strip()
+    ):
+        raise serializers.ValidationError(
+            {
+                "detail": (
+                    "Completa la información adicional de la reserva "
+                    "(marca, campaña y descripción de la actividad) antes de enviar."
                 ),
             }
         )

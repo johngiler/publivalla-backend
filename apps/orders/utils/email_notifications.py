@@ -498,6 +498,14 @@ def try_send_order_status_emails(
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
     accent = (getattr(ws, "primary_color", None) or "").strip() or None
 
+    mounting_groups = None
+    if (to_status or "").strip() == OrderStatus.CLIENT_APPROVED:
+        from apps.orders.utils.order_mounting_provider_email import (
+            order_mounting_provider_groups_by_center,
+        )
+
+        mounting_groups = order_mounting_provider_groups_by_center(order)
+
     any_failed = False
     for recipients, audience in dispatches:
         if not recipients:
@@ -526,6 +534,9 @@ def try_send_order_status_emails(
             workspace=ws,
             client_has_marketplace_account=client_has_marketplace_user(order.client),
             to_status=to_status,
+            mounting_provider_groups=mounting_groups
+            if audience == "client"
+            else None,
         )
         if not send_workspace_transactional_email(
             ws,
