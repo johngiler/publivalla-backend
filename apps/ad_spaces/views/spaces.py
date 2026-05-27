@@ -110,13 +110,11 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             | Q(location_description__icontains=search)
             | Q(shopping_center__name__icontains=search)
             | Q(shopping_center__city__icontains=search)
-            | Q(shopping_center__district__icontains=search)
         )
 
     def _catalog_base_qs(self, request, *, apply_mine: bool = True):
         """Tomas publicables del tenant con filtros de listado/facets (sin prefetch)."""
         qs = AdSpace.objects.filter(
-            shopping_center__marketplace_catalog_enabled=True,
             shopping_center__is_active=True,
             is_active=True,
         )

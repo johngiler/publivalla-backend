@@ -25,36 +25,14 @@ class ShoppingCenter(TimeStampedActiveModel):
         help_text="Identificador en URL pública (?center=, detalle /api/catalog/centers/{slug}/). Único por workspace.",
     )
     city = models.CharField(max_length=120)
-    district = models.CharField(
-        max_length=120,
-        blank=True,
-        help_text="Zona o urbanización para el titular de la tarjeta en portada (ej. Chacao).",
-    )
     address = models.TextField(blank=True)
     country = models.CharField(max_length=120, blank=True, default="Venezuela")
-    phone = models.CharField(max_length=64, blank=True)
-    contact_email = models.EmailField(blank=True)
-    website = models.URLField(blank=True)
     description = models.TextField(blank=True)
     cover_image = models.ImageField(
         upload_to=shopping_center_cover_upload,
         blank=True,
         null=True,
         help_text="Portada del centro: media/<slug>/centers/covers/AÑO/MES/ (histórico: centers/covers/…).",
-    )
-    on_homepage = models.BooleanField(
-        default=True,
-        db_index=True,
-        help_text="Si se incluye en el listado público GET /api/centers/ (la portada del sitio lista tomas).",
-    )
-    listing_order = models.PositiveSmallIntegerField(
-        default=0,
-        help_text="Orden en ese listado de centros (menor primero).",
-    )
-    marketplace_catalog_enabled = models.BooleanField(
-        default=False,
-        db_index=True,
-        help_text="Si el catálogo público de tomas está habilitado para este centro (reservas en marketplace).",
     )
     lessor_legal_name = models.CharField(
         max_length=255,
@@ -93,26 +71,26 @@ class ShoppingCenter(TimeStampedActiveModel):
     high_season_months = models.JSONField(
         default=list,
         blank=True,
-        help_text="Meses de calendario (1–12) en temporada alta cada año, p. ej. [11, 12, 1].",
+        help_text=(
+            "Meses con canon +30 %: Margarita jul–ago y nov–dic; resto nov–dic. "
+            "Se asignan al guardar según nombre/slug del centro."
+        ),
     )
     high_season_multiplier = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=Decimal("1.00"),
-        help_text="Factor sobre el canon mensual en meses de temporada alta (1.25 = +25 %).",
+        default=Decimal("1.30"),
+        help_text="Recargo fijo en temporada alta (+30 %).",
     )
     rental_billing_unit = models.CharField(
         max_length=20,
         choices=RentalBillingUnit.choices,
         default=RentalBillingUnit.CALENDAR_MONTH,
-        help_text=(
-            "Cómo se cotiza y reserva en marketplace: meses de calendario o días "
-            "(canon diario = mensual ÷ 30)."
-        ),
+        help_text="Cotización en marketplace: solo meses de calendario.",
     )
 
     class Meta:
-        ordering = ["listing_order", "slug"]
+        ordering = ["slug"]
         constraints = [
             models.UniqueConstraint(
                 fields=["workspace", "slug"],
@@ -124,6 +102,10 @@ class ShoppingCenter(TimeStampedActiveModel):
         return f"{self.slug} — {self.name}"
 
     def save(self, *args, **kwargs):
+        from apps.malls.utils.high_season import apply_lease_high_season_on_center
+
+        apply_lease_high_season_on_center(self)
+        self.rental_billing_unit = RentalBillingUnit.CALENDAR_MONTH
         _webp_fields = ("cover_image",)
         _uf = kwargs.get("update_fields")
         if _uf is None or any(f in _uf for f in _webp_fields):

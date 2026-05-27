@@ -1,4 +1,4 @@
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Prefetch
 from rest_framework.exceptions import ValidationError
 
 from apps.malls.models import ShoppingCenter
@@ -48,12 +48,10 @@ class ShoppingCenterAdminViewSet(AdminModelViewSet):
                 qs = qs.filter(is_active=False)
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(
-                    Q(slug__icontains=search)
-                    | Q(name__icontains=search)
-                    | Q(city__icontains=search)
-                    | Q(district__icontains=search)
-                )
+                qs = qs.filter(name__icontains=search)
+            city = self.request.query_params.get("city", "").strip()
+            if city:
+                qs = qs.filter(city__iexact=city)
         return qs.prefetch_related(
             Prefetch(
                 "mounting_providers",

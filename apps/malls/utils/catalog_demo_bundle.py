@@ -37,7 +37,6 @@ def build_demo_catalog_bundle(
     slug = (center_slug or "demo").strip().lower() or "demo"
     center_name = f"{brand} — Centro demostración"
     city = "Caracas"
-    district = "Demostración"
     prefix = (code_prefix or "").strip().upper()
     if not prefix:
         prefix = code_prefix_for_center_slug(slug, center_name)
@@ -62,19 +61,12 @@ def build_demo_catalog_bundle(
         "slug": slug,
         "name": center_name,
         "city": city,
-        "district": district,
-        "address": f"Av. Principal de demostración, zona {district}, {city}.",
+        "address": f"Av. Principal de demostración, {city}.",
         "country": "Venezuela",
-        "phone": "+58 212 555-0100",
-        "contact_email": f"centro.demo@{ws.slug}.invalid",
-        "website": f"https://{ws.slug}.invalid/centro-demo",
         "description": (
             f"Centro comercial de demostración para {brand}. "
             "Los datos son ficticios hasta recibir el catálogo oficial en PDF."
         ),
-        "on_homepage": True,
-        "listing_order": 0,
-        "marketplace_catalog_enabled": True,
         "lessor_legal_name": f"{brand} Arrendadora Demo, C.A.",
         "lessor_rif": "J-00000000-0",
         "municipal_authority_line": f"Sres. Alcaldía — permiso demo ({city})",

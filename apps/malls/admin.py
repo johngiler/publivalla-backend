@@ -11,8 +11,7 @@ class ShoppingCenterAdmin(admin.ModelAdmin):
         "workspace",
         "city",
         "is_active",
-        "marketplace_catalog_enabled",
         "created_at",
     )
-    list_filter = ("is_active", "marketplace_catalog_enabled", "workspace")
-    search_fields = ("slug", "name")
+    list_filter = ("is_active", "workspace")
+    search_fields = ("slug", "name", "city")

@@ -1,4 +1,4 @@
-"""Unidad de facturación de reservas: mes o día de calendario (por centro)."""
+"""Unidad de facturación de reservas: solo meses de calendario."""
 
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ CALENDAR_DAY = "calendar_day"
 
 
 def normalize_rental_billing_unit(raw) -> str:
-    v = (raw or CALENDAR_MONTH).strip().lower()
-    return CALENDAR_DAY if v == CALENDAR_DAY else CALENDAR_MONTH
+    """Siempre mes de calendario (cotización por día deshabilitada)."""
+    return CALENDAR_MONTH
 
 
 def is_daily_billing(unit: str) -> bool:
-    return normalize_rental_billing_unit(unit) == CALENDAR_DAY
+    return False
 
 
 def contract_days_inclusive(start: date, end: date) -> int:

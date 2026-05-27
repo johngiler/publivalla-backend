@@ -23,7 +23,7 @@ class MountingProviderAdminViewSet(AdminModelViewSet):
             .prefetch_related(
                 Prefetch(
                     "shopping_centers",
-                    queryset=ShoppingCenter.objects.order_by("listing_order", "slug", "id"),
+                    queryset=ShoppingCenter.objects.order_by("slug", "id"),
                 )
             )
             .order_by("sort_order", "id")

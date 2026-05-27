@@ -13,7 +13,7 @@ Uso::
     python manage.py provider_demo_data --reset
 
 Requisitos: workspace existente y al menos un centro comercial en ese workspace (si no pasas
-``--shopping-center-id`` / ``--shopping-center-slug``, se usa el primero por ``listing_order``).
+``--shopping-center-id`` / ``--shopping-center-slug``, se usa el primero por slug).
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ def _resolve_center(ws: Workspace, center_id: int | None, center_slug: str | Non
             raise CommandError(
                 f"No existe el centro slug={slug!r} en el workspace «{ws.slug}»."
             ) from e
-    center = qs.order_by("listing_order", "id").first()
+    center = qs.order_by("slug", "id").first()
     if center is None:
         raise CommandError(
             f"El workspace «{ws.slug}» no tiene centros comerciales. Crea uno antes o indica "

@@ -84,9 +84,9 @@ class MountingProviderSerializer(serializers.ModelSerializer):
             centers = list(cache["shopping_centers"])
         else:
             centers = list(
-                obj.shopping_centers.order_by("listing_order", "slug", "id")
+                obj.shopping_centers.order_by("slug", "id")
             )
-        centers.sort(key=lambda c: (c.listing_order, c.slug, c.id))
+        centers.sort(key=lambda c: (c.slug, c.id))
         return centers
 
     def to_representation(self, instance):

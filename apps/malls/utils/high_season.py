@@ -1,10 +1,17 @@
-"""Temporada alta por centro comercial (meses recurrentes + multiplicador)."""
+"""Temporada alta del canon de arrendamiento por centro comercial."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
+# +30 % sobre el canon mensual en meses de temporada alta (requisito de negocio fijo).
+HIGH_SEASON_LEASE_SURCHARGE = Decimal("1.30")
+
+# Sambil Margarita: julio, agosto, noviembre, diciembre.
+MARGARITA_HIGH_SEASON_MONTHS = [7, 8, 11, 12]
+# Resto de centros comerciales: noviembre y diciembre.
+DEFAULT_HIGH_SEASON_MONTHS = [11, 12]
 
 
 def normalize_high_season_months(raw) -> list[int]:
@@ -24,22 +31,41 @@ def normalize_high_season_months(raw) -> list[int]:
     return sorted(out)
 
 
+def is_sambil_margarita_center(center) -> bool:
+    """Centro Sambil Margarita (slug histórico smg o nombre/slug con «margarita»)."""
+    slug = (getattr(center, "slug", None) or "").strip().lower()
+    name = (getattr(center, "name", None) or "").strip().lower()
+    if slug in ("smg", "sambil-margarita", "margarita"):
+        return True
+    if "margarita" in slug or "margarita" in name:
+        return True
+    return name == "sambil margarita"
+
+
+def lease_high_season_months_for_center(center) -> list[int]:
+    """Meses de temporada alta del canon según reglas por mall."""
+    if is_sambil_margarita_center(center):
+        return list(MARGARITA_HIGH_SEASON_MONTHS)
+    return list(DEFAULT_HIGH_SEASON_MONTHS)
+
+
+def apply_lease_high_season_on_center(center) -> None:
+    """Aplica meses y recargo fijo (+30 %) antes de persistir."""
+    center.high_season_months = lease_high_season_months_for_center(center)
+    center.high_season_multiplier = HIGH_SEASON_LEASE_SURCHARGE
+
+
 def is_high_season_month(center, month: int) -> bool:
     months = normalize_high_season_months(getattr(center, "high_season_months", None))
     return month in months
 
 
 def high_season_multiplier(center) -> Decimal:
-    raw = getattr(center, "high_season_multiplier", None)
-    if raw is None:
+    """Factor de recargo en temporada alta (1.30 = +30 %); 1 si no hay meses configurados."""
+    months = normalize_high_season_months(getattr(center, "high_season_months", None))
+    if not months:
         return Decimal("1")
-    try:
-        m = Decimal(str(raw))
-    except Exception:
-        return Decimal("1")
-    if m < Decimal("1"):
-        return Decimal("1")
-    return m.quantize(Decimal("0.01"))
+    return HIGH_SEASON_LEASE_SURCHARGE
 
 
 def effective_monthly_price_for_month(
@@ -49,7 +75,7 @@ def effective_monthly_price_for_month(
 ) -> Decimal:
     """Precio mensual aplicable a un mes calendario concreto."""
     if is_high_season_month(center, month):
-        return (base_monthly * high_season_multiplier(center)).quantize(Decimal("0.01"))
+        return (base_monthly * HIGH_SEASON_LEASE_SURCHARGE).quantize(Decimal("0.01"))
     return base_monthly.quantize(Decimal("0.01"))
 
 

@@ -65,12 +65,7 @@ class ClientViewSet(AdminModelViewSet):
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(
-                    Q(company_name__icontains=search)
-                    | Q(rif__icontains=search)
-                    | Q(email__icontains=search)
-                    | Q(contact_name__icontains=search)
-                    | Q(representative_name__icontains=search)
-                    | Q(representative_id_number__icontains=search)
+                    Q(company_name__icontains=search) | Q(rif__icontains=search)
                 )
         return qs
 

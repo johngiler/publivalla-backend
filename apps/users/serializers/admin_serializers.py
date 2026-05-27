@@ -37,6 +37,8 @@ class UserAdminSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "username",
+            "first_name",
+            "last_name",
             "email",
             "role",
             "cover_image",
@@ -75,6 +77,8 @@ class UserAdminSerializer(serializers.ModelSerializer):
 
 class UserAdminCreateSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(
@@ -132,6 +136,8 @@ class UserAdminCreateSerializer(serializers.Serializer):
             username=validated_data["username"],
             email=validated_data.get("email", ""),
             password=validated_data["password"],
+            first_name=(validated_data.get("first_name") or "").strip(),
+            last_name=(validated_data.get("last_name") or "").strip(),
         )
         profile = user.profile
         profile.role = role
@@ -156,6 +162,8 @@ class UserAdminCreateSerializer(serializers.Serializer):
 
 
 class UserAdminUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     email = serializers.EmailField(required=False)
     role = serializers.ChoiceField(choices=UserProfile.Role.choices, required=False)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -233,9 +241,18 @@ class UserAdminUpdateSerializer(serializers.Serializer):
                 instance.set_password(pwd)
                 instance.save(update_fields=["password"])
 
+        user_fields = []
         if "email" in validated_data:
             instance.email = validated_data["email"]
-            instance.save(update_fields=["email"])
+            user_fields.append("email")
+        if "first_name" in validated_data:
+            instance.first_name = (validated_data.get("first_name") or "").strip()
+            user_fields.append("first_name")
+        if "last_name" in validated_data:
+            instance.last_name = (validated_data.get("last_name") or "").strip()
+            user_fields.append("last_name")
+        if user_fields:
+            instance.save(update_fields=user_fields)
 
         if is_platform_staff(instance):
             raise serializers.ValidationError({"detail": "No se pudo completar la solicitud."})

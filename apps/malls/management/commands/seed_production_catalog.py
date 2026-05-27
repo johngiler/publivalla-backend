@@ -297,8 +297,6 @@ def _apply_parsed_catalog(
         c = parsed.center
         defaults = {k: v for k, v in c.items() if k not in ("slug", "catalog_pdf_path", "code_prefix")}
         defaults.setdefault("country", "Venezuela")
-        defaults.setdefault("on_homepage", True)
-        defaults.setdefault("marketplace_catalog_enabled", True)
         defaults.setdefault("is_active", True)
         center, created = ShoppingCenter.objects.update_or_create(
             workspace=ws,

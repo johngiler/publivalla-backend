@@ -66,11 +66,11 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(
-                    Q(code__icontains=search)
-                    | Q(title__icontains=search)
-                    | Q(shopping_center__slug__icontains=search)
-                    | Q(shopping_center__name__icontains=search)
+                    Q(code__icontains=search) | Q(title__icontains=search)
                 )
+            center_raw = self.request.query_params.get("shopping_center", "").strip()
+            if center_raw.isdigit():
+                qs = qs.filter(shopping_center_id=int(center_raw))
         return qs.prefetch_related("gallery_images")
 
     @action(detail=False, methods=["get"], url_path="next-code")
@@ -126,7 +126,7 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
                 "prefix": prefix,
                 "max_existing_number": max_n,
                 "suggested_code": candidate,
-                "marketplace_catalog_enabled": bool(center.marketplace_catalog_enabled),
+                "is_active": bool(center.is_active),
                 "center_slug": center.slug,
                 "center_name": center.name,
             }
