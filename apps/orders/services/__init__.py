@@ -8,7 +8,9 @@ from apps.orders.services.order_hold_services import (
 from apps.orders.services.order_services import (
     expire_active_orders_after_contract_end,
     log_order_status_transition,
+    order_line_pricing_totals,
     submit_draft_order,
+    update_order_line_pricing,
 )
 
 __all__ = [
@@ -17,5 +19,7 @@ __all__ = [
     "log_order_status_transition",
     "order_display_status_label",
     "order_hold_is_active",
+    "order_line_pricing_totals",
     "submit_draft_order",
+    "update_order_line_pricing",
 ]

@@ -20,7 +20,9 @@ from apps.providers.serializers import MountingProviderSerializer
 from apps.orders.models import Order, OrderArtAttachment, OrderInstallationPermit, OrderItem, OrderStatus
 from apps.orders.serializers import (
     ClientMountingProviderCreateSerializer,
+    OrderLinePricingUpdateSerializer,
     OrderAdminPatchSerializer,
+    OrderClientNegotiationDigitalSignSerializer,
     OrderClientNegotiationSignedSerializer,
     OrderClientPaymentPatchSerializer,
     OrderCreateSerializer,
@@ -340,6 +342,28 @@ class OrderViewSet(
         resp["Content-Length"] = str(len(payload))
         return resp
 
+    @action(detail=True, methods=["patch"], url_path="line-pricing")
+    def line_pricing(self, request, pk=None):
+        """Admin: ajusta subtotales acordados por toma (descuentos antes de facturar)."""
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        instance = self.get_object()
+        ctx = self.get_serializer_context()
+        ser = OrderLinePricingUpdateSerializer(
+            data=request.data,
+            context={
+                **ctx,
+                "order": instance,
+                "actor": request.user if request.user.is_authenticated else None,
+            },
+        )
+        ser.is_valid(raise_exception=True)
+        order = ser.save()
+        return Response(OrderSerializer(order, context=ctx).data)
+
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, pk=None):
         from rest_framework import serializers as drf_serializers
@@ -369,6 +393,8 @@ class OrderViewSet(
                 status=status.HTTP_404_NOT_FOUND,
             )
         resp = FileResponse(handle, content_type="application/pdf", as_attachment=True, filename=filename)
+        resp["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp["Pragma"] = "no-cache"
         return resp
 
     def _ensure_order_access(self, request, order: Order) -> bool:
@@ -387,6 +413,35 @@ class OrderViewSet(
             )
         ref = (order.code or str(order.pk)).replace("#", "").replace("/", "-")
         return self._pdf_file_response(order, "negotiation_sheet_pdf", f"hoja-negociacion-{ref}.pdf")
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="sign-negotiation-sheet",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def sign_negotiation_sheet(self, request, pk=None):
+        """Cliente: firma digital en la web; genera PDF con la firma del inquilino."""
+        order = self.get_object()
+        if user_is_admin(request.user):
+            return Response(
+                {"detail": "Esta acción es solo para la cuenta del cliente."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        client = get_marketplace_client(request.user)
+        if client is None or order.client_id != client.pk:
+            return Response(
+                {"detail": "No tienes permiso para modificar este pedido."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        ctx = self.get_serializer_context()
+        ser = OrderClientNegotiationDigitalSignSerializer(
+            data=request.data,
+            context={**ctx, "order": order},
+        )
+        ser.is_valid(raise_exception=True)
+        order = ser.save()
+        return Response(OrderSerializer(order, context=ctx).data)
 
     @action(detail=True, methods=["get"], url_path="download-negotiation-sheet-signed")
     def download_negotiation_sheet_signed(self, request, pk=None):
@@ -415,12 +470,15 @@ class OrderViewSet(
         ctype, _ = mimetypes.guess_type(f.name)
         if not ctype:
             ctype = "application/octet-stream"
-        return FileResponse(
+        resp = FileResponse(
             handle,
             content_type=ctype,
             as_attachment=True,
             filename=basename,
         )
+        resp["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp["Pragma"] = "no-cache"
+        return resp
 
     @action(detail=True, methods=["get"], url_path="download-municipality-letter")
     def download_municipality_letter(self, request, pk=None):

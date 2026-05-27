@@ -26,6 +26,45 @@ PIPELINE_STATUSES: tuple[str, ...] = (
     OrderStatus.ACTIVE,
 )
 
+ORDER_LINE_PRICING_EDITABLE_STATUSES: frozenset[str] = frozenset(
+    {
+        OrderStatus.SUBMITTED,
+        OrderStatus.CLIENT_APPROVED,
+        OrderStatus.ART_APPROVED,
+    }
+)
+
+ORDER_STATUSES_WITH_NEGOTIATION_PDF: frozenset[str] = frozenset(
+    {
+        OrderStatus.CLIENT_APPROVED,
+        OrderStatus.ART_APPROVED,
+    }
+)
+
+
+def order_has_negotiation_sheet_pdf(order) -> bool:
+    f = getattr(order, "negotiation_sheet_pdf", None)
+    return bool(f and getattr(f, "name", ""))
+
+
+def order_has_negotiation_sheet_signed(order) -> bool:
+    f = getattr(order, "negotiation_sheet_signed", None)
+    return bool(f and getattr(f, "name", ""))
+
+
+def order_should_regenerate_negotiation_pdf(order) -> bool:
+    """True si el pedido ya tiene (o debería tener) PDF de negociación generado."""
+    if order.status in ORDER_STATUSES_WITH_NEGOTIATION_PDF:
+        return True
+    return order_has_negotiation_sheet_pdf(order)
+
+
+def order_line_pricing_editable(order) -> bool:
+    """Descuentos por toma: antes de facturar y sin hoja de negociación firmada."""
+    if order.status not in ORDER_LINE_PRICING_EDITABLE_STATUSES:
+        return False
+    return not order_has_negotiation_sheet_signed(order)
+
 
 def ad_space_allows_marketplace_reservation(ad_space) -> bool:
     """

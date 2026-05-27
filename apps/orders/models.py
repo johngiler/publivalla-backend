@@ -222,7 +222,16 @@ class OrderItem(TimeStampedActiveModel):
     start_date = models.DateField()
     end_date = models.DateField()
     monthly_price = models.DecimalField(max_digits=12, decimal_places=2)
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    subtotal = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Importe acordado para esta toma (puede ser menor que el catálogo).",
+    )
+    original_subtotal = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Subtotal de catálogo al enviar el pedido; referencia para descuentos por toma.",
+    )
 
     def __str__(self):
         return f"Item {self.pk} for order {self.order_id}"

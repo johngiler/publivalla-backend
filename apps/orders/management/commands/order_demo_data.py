@@ -492,6 +492,7 @@ class Command(BaseCommand):
                     end_date=end,
                     monthly_price=monthly,
                     subtotal=sub,
+                    original_subtotal=sub,
                     created_at=created_dt,
                     updated_at=created_dt,
                 )

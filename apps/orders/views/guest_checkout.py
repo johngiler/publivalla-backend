@@ -418,6 +418,7 @@ class GuestCheckoutView(APIView):
                         end_date=row["end_date"],
                         monthly_price=row["_monthly_price"],
                         subtotal=row["_subtotal"],
+                        original_subtotal=row["_subtotal"],
                     )
                     total += row["_subtotal"]
                 order.total_amount = total.quantize(Decimal("0.01"))

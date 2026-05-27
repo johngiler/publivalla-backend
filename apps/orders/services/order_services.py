@@ -6,10 +6,10 @@ from decimal import Decimal
 
 from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Prefetch
 from django.utils import timezone
 
-from apps.orders.models import Order, OrderStatus, OrderStatusEvent
+from apps.orders.models import Order, OrderStatus, OrderStatusEvent, OrderItem
 from apps.orders.services.order_hold_services import (
     NOTE_HOLD_ON_SUBMIT,
     apply_hold_on_order_submit,
@@ -178,7 +178,8 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
         )
         item.monthly_price = monthly
         item.subtotal = sub
-        item.save(update_fields=["monthly_price", "subtotal"])
+        item.original_subtotal = sub
+        item.save(update_fields=["monthly_price", "subtotal", "original_subtotal"])
         total += sub
     order.total_amount = total.quantize(Decimal("0.01"))
     order.status = OrderStatus.SUBMITTED
@@ -198,6 +199,145 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
         OrderStatus.SUBMITTED,
         actor=actor,
         note=NOTE_HOLD_ON_SUBMIT,
+    )
+    order.refresh_from_db()
+    return order
+
+
+def order_line_pricing_totals(order: Order) -> tuple[Decimal, Decimal]:
+    """(catalog_subtotal, discount_total) sin IVA."""
+    catalog = Decimal("0")
+    discount = Decimal("0")
+    for item in order.items.all():
+        orig = item.original_subtotal if item.original_subtotal is not None else item.subtotal
+        catalog += orig
+        diff = (orig - item.subtotal).quantize(Decimal("0.01"))
+        if diff > 0:
+            discount += diff
+    return catalog.quantize(Decimal("0.01")), discount.quantize(Decimal("0.01"))
+
+
+@transaction.atomic
+def update_order_line_pricing(
+    order: Order,
+    *,
+    items: list[dict],
+    actor: AbstractBaseUser | None = None,
+) -> Order:
+    """Actualiza subtotales acordados por toma (solo descuentos, antes de facturar)."""
+    from rest_framework import serializers
+
+    from apps.orders.utils.validators import (
+        order_has_negotiation_sheet_signed,
+        order_line_pricing_editable,
+        order_should_regenerate_negotiation_pdf,
+    )
+
+    if not order_line_pricing_editable(order):
+        if order_has_negotiation_sheet_signed(order):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "No puedes cambiar precios: el cliente ya subió la hoja de negociación "
+                        "firmada. Si necesitas otro importe, gestiona el cambio fuera del sistema."
+                    )
+                }
+            )
+        raise serializers.ValidationError(
+            {
+                "detail": (
+                    "Solo puedes ajustar precios en pedidos enviados o en gestión comercial "
+                    "antes de facturar, y mientras no exista hoja firmada."
+                )
+            }
+        )
+
+    order = (
+        Order.objects.select_for_update()
+        .prefetch_related(
+            Prefetch(
+                "items",
+                queryset=OrderItem.objects.select_related("ad_space"),
+            )
+        )
+        .get(pk=order.pk)
+    )
+    by_id = {it.pk: it for it in order.items.all()}
+    if not by_id:
+        raise serializers.ValidationError({"detail": "El pedido no tiene líneas."})
+
+    seen: set[int] = set()
+    total = Decimal("0")
+
+    for row in items:
+        item_id = row["id"]
+        if item_id in seen:
+            raise serializers.ValidationError(
+                {"items": "Hay líneas duplicadas en la solicitud."}
+            )
+        seen.add(item_id)
+        item = by_id.get(item_id)
+        if item is None:
+            raise serializers.ValidationError(
+                {"items": f"La línea {item_id} no pertenece a este pedido."}
+            )
+        sub = row["subtotal"]
+        orig = item.original_subtotal if item.original_subtotal is not None else item.subtotal
+        if sub > orig:
+            raise serializers.ValidationError(
+                {
+                    "items": (
+                        f"El importe acordado de {item.ad_space.code} no puede superar "
+                        f"el subtotal de catálogo (${orig:,.2f})."
+                    )
+                }
+            )
+        item.subtotal = sub
+        item.save(update_fields=["subtotal", "updated_at"])
+        total += sub
+
+    if seen != set(by_id.keys()):
+        raise serializers.ValidationError(
+            {"items": "Debes indicar el subtotal acordado de todas las líneas del pedido."}
+        )
+
+    order.total_amount = total.quantize(Decimal("0.01"))
+    order.save(update_fields=["total_amount", "updated_at"])
+
+    # Recargar sin caché de prefetch (los ítems ya se guardaron en BD).
+    order = (
+        Order.objects.prefetch_related(
+            Prefetch(
+                "items",
+                queryset=OrderItem.objects.select_related("ad_space"),
+            )
+        )
+        .get(pk=order.pk)
+    )
+
+    _, discount = order_line_pricing_totals(order)
+    note = "Precios acordados actualizados."
+    if discount > 0:
+        note = f"Precios acordados actualizados (descuento total ${discount:,.2f} sin IVA)."
+    else:
+        note = "Precios acordados actualizados (sin descuento)."
+
+    if order_should_regenerate_negotiation_pdf(order):
+        from apps.orders.utils.document_generation import (
+            generate_negotiation_and_municipality_pdfs,
+        )
+
+        generate_negotiation_and_municipality_pdfs(order)
+        note = (
+            f"{note} Hoja de negociación regenerada; el cliente debe descargarla y firmarla de nuevo."
+        )
+
+    log_order_status_transition(
+        order,
+        order.status,
+        order.status,
+        actor=actor,
+        note=note,
     )
     order.refresh_from_db()
     return order

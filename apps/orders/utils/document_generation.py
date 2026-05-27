@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from django.core.files.base import ContentFile
+from django.utils import timezone
 
 from apps.orders.models import Order
 
@@ -28,18 +29,21 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
         build_negotiation_sheet_pdf_bytes,
     )
 
+    from django.utils import timezone
+
     order.refresh_from_db()
     neg = build_negotiation_sheet_pdf_bytes(order=order)
     auth = build_municipality_authorization_pdf_bytes(order=order)
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
     _delete_field_file(order, "negotiation_sheet_pdf")
     _delete_field_file(order, "municipality_authorization_pdf")
     order.negotiation_sheet_pdf.save(
-        f"negociacion_pedido_{order.pk}.pdf",
+        f"negociacion_pedido_{order.pk}_{ts}.pdf",
         ContentFile(neg),
         save=False,
     )
     order.municipality_authorization_pdf.save(
-        f"carta_municipio_pedido_{order.pk}.pdf",
+        f"carta_municipio_pedido_{order.pk}_{ts}.pdf",
         ContentFile(auth),
         save=False,
     )
@@ -50,6 +54,28 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
             "updated_at",
         ]
     )
+
+
+def save_negotiation_sheet_signed_with_digital_signature(
+    order: Order,
+    signature_png: bytes,
+) -> None:
+    """Genera la hoja de negociación con firma del inquilino y la guarda como documento firmado."""
+    from apps.orders.utils.pdf_documents import build_negotiation_sheet_pdf_bytes
+
+    order.refresh_from_db()
+    pdf_bytes = build_negotiation_sheet_pdf_bytes(
+        order=order,
+        tenant_signature_png=signature_png,
+    )
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    _delete_field_file(order, "negotiation_sheet_signed")
+    order.negotiation_sheet_signed.save(
+        f"hoja_negociacion_firmada_digital_{order.pk}_{ts}.pdf",
+        ContentFile(pdf_bytes),
+        save=False,
+    )
+    order.save(update_fields=["negotiation_sheet_signed", "updated_at"])
 
 
 def generate_invoice_pdf_for_order(order: Order) -> None:

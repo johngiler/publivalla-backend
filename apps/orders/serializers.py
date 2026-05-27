@@ -33,6 +33,7 @@ _RECEIPT_MAX_BYTES = 5 * 1024 * 1024
 _RECEIPT_ALLOWED_CT = frozenset(
     {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 )
+_SIGNATURE_PNG_MAX_BYTES = 512 * 1024
 
 
 def installation_permit_has_municipal_documents(permit) -> bool:
@@ -54,6 +55,38 @@ def validate_order_receipt_file(value):
             "Formato no permitido. Usa JPG, PNG, WebP o PDF."
         )
     return value
+
+
+def validate_negotiation_signature_png(value):
+    if value is None:
+        raise serializers.ValidationError("Debes dibujar tu firma en el recuadro.")
+    if getattr(value, "size", 0) > _SIGNATURE_PNG_MAX_BYTES:
+        raise serializers.ValidationError(
+            "La firma es demasiado grande. Intenta dibujarla de nuevo."
+        )
+    if getattr(value, "size", 0) == 0:
+        raise serializers.ValidationError("Debes dibujar tu firma en el recuadro.")
+    ct = (getattr(value, "content_type", None) or "").strip().lower()
+    if ct and ct != "image/png":
+        raise serializers.ValidationError("La firma debe enviarse en formato PNG.")
+    return value
+
+
+def _validate_negotiation_signed_order_status(order) -> None:
+    if order.status not in (
+        OrderStatus.CLIENT_APPROVED,
+        OrderStatus.INVOICED,
+        OrderStatus.PAID,
+    ):
+        raise serializers.ValidationError(
+            {
+                "detail": (
+                    "Solo puedes subir o actualizar la hoja firmada cuando el pedido está en "
+                    "«Solicitud aprobada», «Facturada» o «Pagada» (por ejemplo, si el equipo actualizó el PDF de "
+                    "negociación y necesitas firmar de nuevo)."
+                )
+            }
+        )
 
 
 def validate_order_invoice_digital_file(value):
@@ -279,6 +312,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     )
     ad_space_cover_image = serializers.SerializerMethodField()
     ad_space_gallery_images = serializers.SerializerMethodField()
+    discount_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
@@ -296,8 +330,15 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
             "monthly_price",
+            "original_subtotal",
             "subtotal",
+            "discount_amount",
         )
+
+    def get_discount_amount(self, obj):
+        orig = obj.original_subtotal if obj.original_subtotal is not None else obj.subtotal
+        diff = (orig - obj.subtotal).quantize(Decimal("0.01"))
+        return str(diff if diff > 0 else Decimal("0"))
 
     def get_ad_space_gallery_images(self, obj):
         ad = obj.ad_space
@@ -366,6 +407,9 @@ class OrderSerializer(serializers.ModelSerializer):
         source="client.workspace.slug", read_only=True
     )
     client_detail = OrderClientSnapshotSerializer(source="client", read_only=True)
+    catalog_subtotal = serializers.SerializerMethodField()
+    discount_total = serializers.SerializerMethodField()
+    line_pricing_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -380,6 +424,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "status_label",
             "hold_active",
             "total_amount",
+            "catalog_subtotal",
+            "discount_total",
+            "line_pricing_editable",
             "submitted_at",
             "hold_expires_at",
             "created_at",
@@ -404,12 +451,16 @@ class OrderSerializer(serializers.ModelSerializer):
             "art_attachments",
             "installation_permit",
             "status_timeline",
+            "updated_at",
         )
         read_only_fields = (
             "status",
             "status_label",
             "hold_active",
             "total_amount",
+            "catalog_subtotal",
+            "discount_total",
+            "line_pricing_editable",
             "submitted_at",
             "hold_expires_at",
             "created_at",
@@ -432,6 +483,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "negotiation_sheet_signed_url",
             "workspace_slug",
             "code",
+            "updated_at",
         )
 
     def get_status_label(self, obj):
@@ -495,6 +547,23 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_negotiation_sheet_signed_url(self, obj):
         return self._file_url(obj.negotiation_sheet_signed)
+
+    def get_catalog_subtotal(self, obj):
+        from apps.orders.services import order_line_pricing_totals
+
+        catalog, _ = order_line_pricing_totals(obj)
+        return str(catalog)
+
+    def get_discount_total(self, obj):
+        from apps.orders.services import order_line_pricing_totals
+
+        _, discount = order_line_pricing_totals(obj)
+        return str(discount)
+
+    def get_line_pricing_editable(self, obj):
+        from apps.orders.utils.validators import order_line_pricing_editable
+
+        return order_line_pricing_editable(obj)
 
     def get_installation_permit(self, obj):
         from django.core.exceptions import ObjectDoesNotExist
@@ -566,6 +635,31 @@ class OrderClientPaymentPatchSerializer(serializers.ModelSerializer):
 
             transaction.on_commit(_enqueue)
         return instance
+
+
+class OrderLinePricingItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"))
+
+
+class OrderLinePricingUpdateSerializer(serializers.Serializer):
+    items = OrderLinePricingItemSerializer(many=True, allow_empty=False)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Indica al menos una línea.")
+        return value
+
+    def save(self, **kwargs):
+        order = self.context["order"]
+        actor = self.context.get("actor")
+        from apps.orders.services import update_order_line_pricing
+
+        return update_order_line_pricing(
+            order,
+            items=self.validated_data["items"],
+            actor=actor,
+        )
 
 
 class OrderAdminPatchSerializer(serializers.ModelSerializer):
@@ -845,16 +939,7 @@ class OrderClientNegotiationSignedSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         inst = self.instance
-        if inst.status not in (OrderStatus.CLIENT_APPROVED, OrderStatus.INVOICED, OrderStatus.PAID):
-            raise serializers.ValidationError(
-                {
-                    "detail": (
-                        "Solo puedes subir o actualizar la hoja firmada cuando el pedido está en "
-                        "«Solicitud aprobada», «Facturada» o «Pagada» (por ejemplo, si el equipo actualizó el PDF de "
-                        "negociación y necesitas firmar de nuevo)."
-                    )
-                }
-            )
+        _validate_negotiation_signed_order_status(inst)
         return attrs
 
     def update(self, instance, validated_data):
@@ -881,6 +966,73 @@ class OrderClientNegotiationSignedSerializer(serializers.ModelSerializer):
 
             transaction.on_commit(_enqueue)
         return instance
+
+
+class OrderClientNegotiationDigitalSignSerializer(serializers.Serializer):
+    """Firma digital en la web: dibujo PNG incrustado en la hoja de negociación."""
+
+    signature_png = serializers.FileField()
+
+    def validate_signature_png(self, value):
+        return validate_negotiation_signature_png(value)
+
+    def validate(self, attrs):
+        order = self.context.get("order")
+        if order is None:
+            raise serializers.ValidationError({"detail": "Pedido no encontrado."})
+        _validate_negotiation_signed_order_status(order)
+        if not order.negotiation_sheet_pdf or not getattr(
+            order.negotiation_sheet_pdf, "name", ""
+        ):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "La hoja de negociación aún no está disponible. "
+                        "Espera a que el equipo la genere o recarga la página."
+                    )
+                }
+            )
+        return attrs
+
+    def save(self):
+        order = self.context["order"]
+        upload = self.validated_data["signature_png"]
+        signature_bytes = upload.read()
+        if not signature_bytes:
+            raise serializers.ValidationError(
+                {"signature_png": "Debes dibujar tu firma en el recuadro."}
+            )
+
+        from apps.orders.utils.document_generation import (
+            save_negotiation_sheet_signed_with_digital_signature,
+        )
+
+        old = (
+            order.negotiation_sheet_signed if order.negotiation_sheet_signed else None
+        )
+        save_negotiation_sheet_signed_with_digital_signature(order, signature_bytes)
+        order.refresh_from_db()
+        new = order.negotiation_sheet_signed
+        if old and new and getattr(old, "name", None) != getattr(new, "name", None):
+            old.delete(save=False)
+
+        req = self.context.get("request")
+        aid = (
+            req.user.pk
+            if req and getattr(req, "user", None) is not None and req.user.is_authenticated
+            else None
+        )
+        oid = order.pk
+
+        def _enqueue() -> None:
+            from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
+
+            schedule_send_order_client_activity_admin_emails(
+                oid, "negotiation_signed", actor_id=aid
+            )
+
+        transaction.on_commit(_enqueue)
+        return order
 
 
 class ClientMountingProviderCreateSerializer(serializers.Serializer):
@@ -1122,6 +1274,7 @@ class OrderCreateSerializer(OrderReservationInfoWriteMixin, serializers.Serializ
                 end_date=row["end_date"],
                 monthly_price=row["_monthly_price"],
                 subtotal=row["_subtotal"],
+                original_subtotal=row["_subtotal"],
             )
             total += row["_subtotal"]
         order.total_amount = total.quantize(Decimal("0.01"))

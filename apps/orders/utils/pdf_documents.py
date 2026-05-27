@@ -164,7 +164,57 @@ def _escape(s: str) -> str:
     )
 
 
-def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
+def _party_signature_cell(
+    name: str,
+    body_st,
+    *,
+    signature_png: bytes | None = None,
+) -> Table:
+    """Bloque nombre + línea o imagen de firma (columna arrendador / inquilino)."""
+    rows: list[list] = [[Paragraph(f"<b>{_escape(name)}</b>", body_st)]]
+    if signature_png:
+        try:
+            reader = ImageReader(BytesIO(signature_png))
+            iw, ih = reader.getSize()
+            max_w = 7.0 * cm
+            max_h = 1.4 * cm
+            scale = min(
+                max_w / max(float(iw), 1.0),
+                max_h / max(float(ih), 1.0),
+            )
+            img = Image(
+                BytesIO(signature_png),
+                width=float(iw) * scale,
+                height=float(ih) * scale,
+            )
+            img.hAlign = "LEFT"
+            rows.append([Spacer(1, 0.15 * cm)])
+            rows.append([img])
+        except Exception:
+            rows.append([Spacer(1, 0.6 * cm)])
+    else:
+        rows.append([Spacer(1, 0.6 * cm)])
+    rows.append([Paragraph("_________________________", body_st)])
+    inner = Table(rows, colWidths=[8.0 * cm])
+    inner.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return inner
+
+
+def build_negotiation_sheet_pdf_bytes(
+    *,
+    order,
+    tenant_signature_png: bytes | None = None,
+) -> bytes:
     """Hoja de negociación (referencia visual: campos centrados / arrendador-inquilino)."""
     client = order.client
     items = list(order.items.select_related(
@@ -188,26 +238,37 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     start = min(it.start_date for it in items)
     end = max(it.end_date for it in items)
     months = (end.year - start.year) * 12 + (end.month - start.month) + 1
+    from apps.orders.services.order_services import order_line_pricing_totals
+
+    catalog_subtotal, discount_total = order_line_pricing_totals(order)
     total = order.total_amount or Decimal("0")
     iva = (total * IVA_RATE).quantize(Decimal("0.01"))
     total_con_iva = (total + iva).quantize(Decimal("0.01"))
 
-    monthly_lines = []
+    importe_lines = []
     description_lines = []
     for it in items:
         code = (it.ad_space.code or "").strip()
         title = (it.ad_space.title or "").strip()
-        monthly_lines.append(
-            f"${it.monthly_price:,.2f} USD / mes"
-            + (f" · {code}" if code else "")
+        orig = (
+            it.original_subtotal
+            if it.original_subtotal is not None
+            else it.subtotal
         )
-        if title:
-            description_lines.append(
-                f"{code} — {title}" if code else title
+        sub = it.subtotal
+        head = code or title or "Toma"
+        if orig > sub:
+            importe_lines.append(
+                f"{head}: ${orig:,.2f} catálogo → ${sub:,.2f} acordado "
+                f"(desc. ${(orig - sub):,.2f})"
             )
+        else:
+            importe_lines.append(f"{head}: ${sub:,.2f} USD sin IVA")
+        if title:
+            description_lines.append(f"{code} — {title}" if code else title)
         elif code:
             description_lines.append(code)
-    monthly_txt = "<br/>".join(_escape(x) for x in monthly_lines)
+    importe_txt = "<br/>".join(_escape(x) for x in importe_lines)
 
     pay_cond = "Según acuerdo comercial con el centro."
     obs_parts = []
@@ -231,10 +292,15 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
     story.append(Paragraph("HOJA NEGOCIACION TOMAS PUBLICITARIAS", title_st))
     story.append(Spacer(1, 0.4 * cm))
 
-    def row(label: str, value: str):
+    def row(label: str, value: str, *, html: bool = False):
+        value_paragraph = (
+            Paragraph(value, body_st)
+            if html
+            else Paragraph(_escape(value), body_st)
+        )
         return [
             Paragraph(f"<b>{_escape(label)}</b>", label_st),
-            Paragraph(_escape(value), body_st),
+            value_paragraph,
         ]
 
     data = [
@@ -249,14 +315,29 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
         ),
         row("DURACION CONTRATO",
             f"{months} {'mes' if months == 1 else 'meses'}"),
-        row("CANON DE ARRENDAMIENTO MENSUAL", monthly_txt),
+        row("IMPORTE POR TOMA (SIN IVA)", importe_txt, html=True),
+    ]
+    if discount_total > 0:
+        data.extend(
+            [
+                row(
+                    "SUBTOTAL CATÁLOGO (SIN IVA)",
+                    f"${catalog_subtotal:,.2f} USD",
+                ),
+                row("DESCUENTO ACORDADO", f"-${discount_total:,.2f} USD"),
+                row("SUBTOTAL ACORDADO (SIN IVA)", f"${total:,.2f} USD"),
+            ]
+        )
+    data.extend(
+        [
         row(
-            "TOTAL NEGOCIACION",
+            "TOTAL NEGOCIACION (CON IVA)",
             f"${total_con_iva:,.2f} USD",
         ),
         row("CONDICIONES DE PAGO", pay_cond),
         row("OBSERVACIONES", obs),
-    ]
+        ]
+    )
     t = Table(data, colWidths=[5 * cm, 12 * cm])
     t.setStyle(
         TableStyle(
@@ -281,10 +362,12 @@ def build_negotiation_sheet_pdf_bytes(*, order) -> bytes:
         Table(
             [
                 [
-                    Paragraph(
-                        f"<b>{_escape(lessor)}</b><br/><br/>_________________________", body_st),
-                    Paragraph(
-                        f"<b>{_escape(tenant)}</b><br/><br/>_________________________", body_st),
+                    _party_signature_cell(lessor, body_st),
+                    _party_signature_cell(
+                        tenant,
+                        body_st,
+                        signature_png=tenant_signature_png,
+                    ),
                 ]
             ],
             colWidths=[8.5 * cm, 8.5 * cm],
@@ -441,10 +524,13 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
 
 def build_invoice_pdf_bytes(*, order) -> bytes:
     """Factura resumida (referencia comercial; no es timbrado fiscal externo)."""
+    from apps.orders.services import order_line_pricing_totals
+
     client = order.client
     items = list(order.items.select_related(
         "ad_space", "ad_space__shopping_center").all())
     total = order.total_amount or Decimal("0")
+    catalog, discount = order_line_pricing_totals(order)
     iva = (total * IVA_RATE).quantize(Decimal("0.01"))
     grand = (total + iva).quantize(Decimal("0.01"))
     order_ref = (order.code or "").strip() or f"#{order.pk}"
@@ -490,6 +576,21 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
                 _p_cell(desc, inv_cell),
                 _p_cell("1", inv_num),
                 _p_cell(f"${it.subtotal:,.2f}", inv_num),
+            ]
+        )
+    if discount > 0:
+        rows.append(
+            [
+                _p_cell("", inv_cell),
+                _p_cell("Subtotal catálogo", inv_num),
+                _p_cell(f"${catalog:,.2f}", inv_num),
+            ]
+        )
+        rows.append(
+            [
+                _p_cell("", inv_cell),
+                _p_cell("Descuento", inv_num),
+                _p_cell(f"-${discount:,.2f}", inv_num),
             ]
         )
     rows.append([_p_cell("", inv_cell), _p_cell("Subtotal", inv_num,
