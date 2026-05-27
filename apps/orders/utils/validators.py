@@ -60,10 +60,8 @@ def order_should_regenerate_negotiation_pdf(order) -> bool:
 
 
 def order_line_pricing_editable(order) -> bool:
-    """Descuentos por toma: antes de facturar y sin hoja de negociación firmada."""
-    if order.status not in ORDER_LINE_PRICING_EDITABLE_STATUSES:
-        return False
-    return not order_has_negotiation_sheet_signed(order)
+    """Descuentos por toma: editable hasta facturar (renegociación aunque exista hoja firmada)."""
+    return order.status in ORDER_LINE_PRICING_EDITABLE_STATUSES
 
 
 def ad_space_allows_marketplace_reservation(ad_space) -> bool:

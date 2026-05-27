@@ -228,26 +228,16 @@ def update_order_line_pricing(
     from rest_framework import serializers
 
     from apps.orders.utils.validators import (
-        order_has_negotiation_sheet_signed,
         order_line_pricing_editable,
         order_should_regenerate_negotiation_pdf,
     )
 
     if not order_line_pricing_editable(order):
-        if order_has_negotiation_sheet_signed(order):
-            raise serializers.ValidationError(
-                {
-                    "detail": (
-                        "No puedes cambiar precios: el cliente ya subió la hoja de negociación "
-                        "firmada. Si necesitas otro importe, gestiona el cambio fuera del sistema."
-                    )
-                }
-            )
         raise serializers.ValidationError(
             {
                 "detail": (
                     "Solo puedes ajustar precios en pedidos enviados o en gestión comercial "
-                    "antes de facturar, y mientras no exista hoja firmada."
+                    "antes de facturar."
                 )
             }
         )
