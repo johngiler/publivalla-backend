@@ -56,7 +56,9 @@ def order_should_regenerate_negotiation_pdf(order) -> bool:
     """True si el pedido ya tiene (o debería tener) PDF de negociación generado."""
     if order.status in ORDER_STATUSES_WITH_NEGOTIATION_PDF:
         return True
-    return order_has_negotiation_sheet_pdf(order)
+    if order_has_negotiation_sheet_pdf(order):
+        return True
+    return order_has_negotiation_sheet_signed(order)
 
 
 def order_line_pricing_editable(order) -> bool:

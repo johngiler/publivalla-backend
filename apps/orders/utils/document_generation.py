@@ -29,14 +29,19 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
         build_negotiation_sheet_pdf_bytes,
     )
 
-    from django.utils import timezone
-
     order.refresh_from_db()
+    had_signed = bool(
+        getattr(order.negotiation_sheet_signed, "name", "")
+        if order.negotiation_sheet_signed
+        else ""
+    )
     neg = build_negotiation_sheet_pdf_bytes(order=order)
     auth = build_municipality_authorization_pdf_bytes(order=order)
     ts = timezone.now().strftime("%Y%m%d%H%M%S")
     _delete_field_file(order, "negotiation_sheet_pdf")
     _delete_field_file(order, "municipality_authorization_pdf")
+    if had_signed:
+        _delete_field_file(order, "negotiation_sheet_signed")
     order.negotiation_sheet_pdf.save(
         f"negociacion_pedido_{order.pk}_{ts}.pdf",
         ContentFile(neg),
@@ -47,13 +52,14 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
         ContentFile(auth),
         save=False,
     )
-    order.save(
-        update_fields=[
-            "negotiation_sheet_pdf",
-            "municipality_authorization_pdf",
-            "updated_at",
-        ]
-    )
+    update_fields = [
+        "negotiation_sheet_pdf",
+        "municipality_authorization_pdf",
+        "updated_at",
+    ]
+    if had_signed:
+        update_fields.append("negotiation_sheet_signed")
+    order.save(update_fields=update_fields)
 
 
 def save_negotiation_sheet_signed_with_digital_signature(
