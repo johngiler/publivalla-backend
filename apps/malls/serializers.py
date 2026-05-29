@@ -42,7 +42,7 @@ class ShoppingCenterSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         extra_kwargs = {
-            "workspace": {"required": False, "allow_null": True},
+            "workspace": {"read_only": True},
             "cover_image": {"required": False, "allow_null": True},
             "created_at": {"read_only": True},
             "updated_at": {"read_only": True},

@@ -45,7 +45,7 @@ class ClientAdminSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("linked_user_ids", "linked_usernames", "created_at", "updated_at")
         extra_kwargs = {
-            "workspace": {"required": False, "allow_null": True},
+            "workspace": {"read_only": True},
             "cover_image": {"required": False, "allow_null": True},
         }
 
