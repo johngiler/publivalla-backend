@@ -159,7 +159,7 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
             item.end_date,
             exclude_order_id=order.id,
         ):
-            title = (item.ad_space.title or "").strip() or "esta toma"
+            title = (item.ad_space.name or "").strip() or "esta toma"
             raise serializers.ValidationError(
                 {
                     "detail": (f'Las fechas de «{title}» chocan con otra reserva o bloqueo.'),

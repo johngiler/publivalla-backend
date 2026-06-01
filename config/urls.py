@@ -10,7 +10,7 @@ admin.site.site_title = _("Admin")
 admin.site.index_title = _("Inicio")
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from apps.ad_spaces.views import AdSpaceAdminViewSet, AdSpaceViewSet
+from apps.ad_spaces.views import AdSpaceAdminViewSet, AdSpaceProductTypeAdminViewSet, AdSpaceViewSet
 from apps.clients.views import (
     ClientViewSet,
     MyCompanyView,
@@ -66,6 +66,11 @@ router.register(
     basename="admin-mounting-provider",
 )
 router.register(r"admin/spaces", AdSpaceAdminViewSet, basename="admin-space")
+router.register(
+    r"admin/ad-space-product-types",
+    AdSpaceProductTypeAdminViewSet,
+    basename="admin-ad-space-product-type",
+)
 router.register(
     r"admin/availability-blocks",
     AvailabilityBlockAdminViewSet,

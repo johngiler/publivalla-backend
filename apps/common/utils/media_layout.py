@@ -122,6 +122,18 @@ def ad_space_gallery_upload(instance, filename: str) -> str:
     return _join_under_workspace_slug(owner, "spaces", "gallery", filename=filename)
 
 
+def ad_space_location_image_upload(instance, filename: str) -> str:
+    ws = _workspace_from_ad_space(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, "spaces", "location", filename=filename)
+
+
+def ad_space_production_image_upload(instance, filename: str) -> str:
+    ws = _workspace_from_ad_space(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, "spaces", "production", filename=filename)
+
+
 def _workspace_from_client(client) -> object | None:
     ws = getattr(client, "workspace", None)
     if ws is None and getattr(client, "workspace_id", None):

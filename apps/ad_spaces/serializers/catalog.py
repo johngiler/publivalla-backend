@@ -14,6 +14,12 @@ from apps.ad_spaces.utils.availability_calendar import (
     year_months_occupied,
 )
 from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
+from apps.ad_spaces.utils.display import (
+    ad_space_location_text,
+    ad_space_primary_format,
+    ad_space_type_label,
+)
+from apps.ad_spaces.serializers.admin_serializers import AdSpaceFormatSerializer
 from apps.orders.utils.validators import ad_space_allows_marketplace_reservation
 from apps.ad_spaces.models import AdSpace
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
@@ -43,7 +49,24 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     availability_blocked_ranges = serializers.SerializerMethodField(read_only=True)
     status_label = serializers.SerializerMethodField()
     marketplace_reservable = serializers.SerializerMethodField(read_only=True)
-    type_label = serializers.CharField(source="get_type_display", read_only=True)
+    name = serializers.CharField(read_only=True)
+    title = serializers.CharField(source="name", read_only=True)
+    formats = AdSpaceFormatSerializer(many=True, read_only=True)
+    type = serializers.SerializerMethodField(read_only=True)
+    type_label = serializers.SerializerMethodField(read_only=True)
+    width = serializers.SerializerMethodField(read_only=True)
+    height = serializers.SerializerMethodField(read_only=True)
+    quantity = serializers.SerializerMethodField(read_only=True)
+    location_description = serializers.SerializerMethodField(read_only=True)
+    double_sided = serializers.SerializerMethodField(read_only=True)
+    material = serializers.SerializerMethodField(read_only=True)
+    level = serializers.SerializerMethodField(read_only=True)
+    venue_zone = serializers.SerializerMethodField(read_only=True)
+    production_specs = serializers.SerializerMethodField(read_only=True)
+    installation_notes = serializers.SerializerMethodField(read_only=True)
+    hem_pocket_top_cm = serializers.SerializerMethodField(read_only=True)
+    location_image = serializers.SerializerMethodField(read_only=True)
+    production_image = serializers.SerializerMethodField(read_only=True)
     cover_image = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField()
     mounting_providers = serializers.SerializerMethodField(read_only=True)
@@ -78,9 +101,11 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "client_months_reserved_by_year",
             "client_months_active_by_year",
             "availability_blocked_ranges",
+            "name",
+            "title",
+            "formats",
             "type",
             "type_label",
-            "title",
             "description",
             "width",
             "height",
@@ -93,6 +118,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "status_label",
             "marketplace_reservable",
             "cover_image",
+            "location_image",
+            "production_image",
             "gallery_images",
             "venue_zone",
             "double_sided",
@@ -107,6 +134,61 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "rental_billing_unit",
         )
         read_only_fields = ("status",)
+
+    def _primary(self, obj):
+        return ad_space_primary_format(obj)
+
+    def get_type(self, obj):
+        row = self._primary(obj)
+        if row is None:
+            return ""
+        return getattr(row.product_type, "slug", "") or ""
+
+    def get_type_label(self, obj):
+        return ad_space_type_label(obj)
+
+    def get_width(self, obj):
+        row = self._primary(obj)
+        return row.width if row else None
+
+    def get_height(self, obj):
+        row = self._primary(obj)
+        return row.height if row else None
+
+    def get_quantity(self, obj):
+        row = self._primary(obj)
+        return row.quantity if row else 1
+
+    def get_location_description(self, obj):
+        return ad_space_location_text(obj)
+
+    def get_double_sided(self, obj):
+        row = self._primary(obj)
+        return bool(row.double_sided) if row else False
+
+    def _legacy_empty(self, obj):
+        return ""
+
+    get_material = _legacy_empty
+    get_level = _legacy_empty
+    get_venue_zone = _legacy_empty
+    get_production_specs = _legacy_empty
+    get_installation_notes = _legacy_empty
+
+    def get_hem_pocket_top_cm(self, obj):
+        return None
+
+    def get_location_image(self, obj):
+        f = obj.location_image
+        if not f:
+            return None
+        return self._absolute_media_url(f.url)
+
+    def get_production_image(self, obj):
+        f = obj.production_image
+        if not f:
+            return None
+        return self._absolute_media_url(f.url)
 
     def get_catalog_public(self, obj):
         return shopping_center_allows_public_catalog(obj.shopping_center)

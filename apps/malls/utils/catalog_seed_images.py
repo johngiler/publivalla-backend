@@ -144,7 +144,7 @@ def _location_blob(spec: dict | None) -> str:
     if not spec:
         return ""
     parts = [
-        spec.get("title"),
+        spec.get("name") or spec.get("title"),
         spec.get("location_description"),
         spec.get("level"),
         spec.get("installation_notes"),

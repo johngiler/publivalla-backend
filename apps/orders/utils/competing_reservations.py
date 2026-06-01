@@ -140,7 +140,7 @@ def list_competing_submission_groups(workspace: Workspace) -> list[dict]:
             {
                 "ad_space_id": ad.pk,
                 "ad_space_code": ad.code,
-                "ad_space_title": ad.title,
+                "ad_space_title": ad.name,
                 "shopping_center_name": ad.shopping_center.name,
                 "orders": [_serialize_competing_order(o, ad_space_id) for o in orders],
             }

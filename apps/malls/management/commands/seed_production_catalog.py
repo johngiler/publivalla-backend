@@ -26,6 +26,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.common.utils.data_layout import catalog_seed_json_path
+from apps.ad_spaces.utils.format_sync import (
+    legacy_catalog_spec_to_format_rows,
+    sync_ad_space_formats_from_rows,
+)
 from apps.ad_spaces.utils.gallery import sync_cover_from_gallery
 from apps.ad_spaces.models import AdSpace, AdSpaceImage, AdSpaceStatus
 from apps.malls.utils.catalog_demo_bundle import build_demo_catalog_bundle
@@ -313,29 +317,43 @@ def _apply_parsed_catalog(
             code = str(spec.get("code") or "").strip()
             if not code:
                 continue
+            format_rows = legacy_catalog_spec_to_format_rows(spec)
             defaults = {k: v for k, v in spec.items() if k != "code"}
-            defaults["shopping_center"] = center
-            defaults["status"] = AdSpaceStatus.AVAILABLE
-            defaults["is_active"] = True
-            for dk in ("monthly_price_usd", "width", "height", "hem_pocket_top_cm"):
-                if dk in defaults:
-                    defaults[dk] = _dec(defaults[dk])
-            for k in (
-                "description",
+            defaults["name"] = (
+                str(defaults.pop("name", None) or defaults.pop("title", None) or code).strip()[:255]
+            )
+            for legacy_key in (
+                "title",
+                "type",
+                "width",
+                "height",
+                "quantity",
                 "material",
                 "location_description",
                 "level",
                 "venue_zone",
+                "double_sided",
                 "production_specs",
                 "installation_notes",
+                "hem_pocket_top_cm",
+                "formats",
+                "product_type_name",
+                "product_type_slug",
+                "location",
             ):
-                if k in defaults and (defaults[k] is None or str(defaults[k]).strip() == ""):
-                    defaults.pop(k, None)
-            if defaults.get("type") in ("", None):
-                defaults.pop("type", None)
+                defaults.pop(legacy_key, None)
+            defaults["shopping_center"] = center
+            defaults["status"] = AdSpaceStatus.AVAILABLE
+            defaults["is_active"] = True
+            if "monthly_price_usd" in defaults:
+                defaults["monthly_price_usd"] = _dec(defaults["monthly_price_usd"])
+            if defaults.get("description") in (None, ""):
+                defaults.pop("description", None)
             if "monthly_price_usd" not in defaults or defaults.get("monthly_price_usd") is None:
                 raise CommandError(f"{code}: falta Canon mensual (monthly_price_usd).")
             ad, was_created = AdSpace.objects.update_or_create(code=code, defaults=defaults)
+            if format_rows:
+                sync_ad_space_formats_from_rows(ad, format_rows)
             created_n += 1 if was_created else 0
             updated_n += 0 if was_created else 1
 

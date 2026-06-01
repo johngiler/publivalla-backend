@@ -153,7 +153,7 @@ def build_orders_report_workbook(orders) -> Workbook:
             ws_l.cell(row=row_l, column=2, value=_cell_str(order.code))
             ws_l.cell(row=row_l, column=3, value=it.pk)
             ws_l.cell(row=row_l, column=4, value=_cell_str(ad.code))
-            ws_l.cell(row=row_l, column=5, value=_cell_str(ad.title))
+            ws_l.cell(row=row_l, column=5, value=_cell_str(ad.name))
             ws_l.cell(row=row_l, column=6, value=_cell_str(sc.name if sc else ""))
             ws_l.cell(row=row_l, column=7, value=_cell_str(sc.city if sc else ""))
             ws_l.cell(row=row_l, column=8, value=it.start_date.isoformat() if it.start_date else "")

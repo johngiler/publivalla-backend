@@ -58,7 +58,7 @@ class AvailabilityBlockAdminViewSet(AdminModelViewSet):
             if search:
                 qs = qs.filter(
                     Q(ad_space__code__icontains=search)
-                    | Q(ad_space__title__icontains=search)
+                    | Q(ad_space__name__icontains=search)
                     | Q(note__icontains=search)
                     | Q(ad_space__shopping_center__name__icontains=search)
                 )

@@ -115,7 +115,7 @@ class MyContractsView(APIView):
                     "contract_row_kind": kind,
                     "ad_space_id": ad.id,
                     "ad_space_code": ad.code,
-                    "ad_space_title": ad.title,
+                    "ad_space_title": ad.name,
                     "ad_space_cover_image": cover,
                     "ad_space_gallery_images": gallery_urls,
                     "shopping_center_name": sc.name if sc else "",

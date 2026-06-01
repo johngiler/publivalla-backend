@@ -23,7 +23,7 @@ def _type_label(value: str) -> str:
 
 class AvailabilityBlockAdminSerializer(serializers.ModelSerializer):
     ad_space_code = serializers.CharField(source="ad_space.code", read_only=True)
-    ad_space_title = serializers.CharField(source="ad_space.title", read_only=True)
+    ad_space_title = serializers.CharField(source="ad_space.name", read_only=True)
     shopping_center_id = serializers.IntegerField(
         source="ad_space.shopping_center_id", read_only=True
     )

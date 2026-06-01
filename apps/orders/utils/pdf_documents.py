@@ -8,6 +8,12 @@ from pathlib import Path
 
 from django.utils import timezone
 
+from apps.ad_spaces.utils.display import (
+    ad_space_location_text,
+    ad_space_primary_format,
+    ad_space_type_label,
+)
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
@@ -249,7 +255,7 @@ def build_negotiation_sheet_pdf_bytes(
     description_lines = []
     for it in items:
         code = (it.ad_space.code or "").strip()
-        title = (it.ad_space.title or "").strip()
+        title = (it.ad_space.name or "").strip()
         orig = (
             it.original_subtotal
             if it.original_subtotal is not None
@@ -415,7 +421,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     loc_bits = []
     for it in items:
         loc_bits.append(
-            f"{it.ad_space.venue_zone or it.ad_space.location_description or it.ad_space.title} ({sc.name})"
+            f"{ad_space_location_text(it.ad_space)} ({sc.name})"
         )
     location_txt = "; ".join(loc_bits) if loc_bits else sc.name
 
@@ -466,23 +472,23 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
         ]
     ]
     for it in items:
-        w = it.ad_space.width or ""
-        h = it.ad_space.height or ""
+        ad = it.ad_space
+        fmt = ad_space_primary_format(ad)
+        w = fmt.width if fmt and fmt.width is not None else ""
+        h = fmt.height if fmt and fmt.height is not None else ""
         medidas = f"{w}×{h}" if w and h else "—"
-        tipo = it.ad_space.get_type_display() if hasattr(
-            it.ad_space, "get_type_display") else it.ad_space.type
-        ubic = (it.ad_space.venue_zone or it.ad_space.location_description or it.ad_space.title or "").strip() or "—"
+        tipo = ad_space_type_label(ad) or "—"
+        ubic = ad_space_location_text(ad) or "—"
         cara = (
             "Elemento a doble cara"
-            if it.ad_space.double_sided
+            if fmt and fmt.double_sided
             else "Elemento a una cara"
         )
-        notes = (it.ad_space.installation_notes or "").strip()
-        obs = f"{cara}. {notes}" if notes else cara
+        obs = cara
         table_data.append(
             [
                 _p_cell(str(tipo), cell_st),
-                _p_cell(str(it.ad_space.quantity or 1), cell_st),
+                _p_cell(str(fmt.quantity if fmt else 1), cell_st),
                 _p_cell(str(medidas), cell_st),
                 _p_cell(ubic, tight_st),
                 _p_cell(obs, tight_st),
@@ -570,7 +576,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
         ]
     ]
     for it in items:
-        desc = f"{it.ad_space.code} — {it.ad_space.title}"
+        desc = f"{it.ad_space.code} — {it.ad_space.name}"
         rows.append(
             [
                 _p_cell(desc, inv_cell),

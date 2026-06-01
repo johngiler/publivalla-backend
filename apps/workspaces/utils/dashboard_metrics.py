@@ -12,6 +12,7 @@ from decimal import Decimal
 from django.db.models import Count, Max, Q, Sum
 from django.utils import timezone
 
+from apps.ad_spaces.models import AdSpaceFormat
 from apps.availability.models import AvailabilityBlock
 from apps.orders.models import Order, OrderItem, OrderStatus, OrderStatusEvent
 
@@ -126,7 +127,7 @@ def build_extended_metrics(*, ws, orders_qs, spaces_qs) -> dict:
             order__client__workspace=ws,
             order__status__in=(OrderStatus.ACTIVE, OrderStatus.EXPIRED),
         )
-        .values("ad_space_id", "ad_space__code", "ad_space__title")
+        .values("ad_space_id", "ad_space__code", "ad_space__name")
         .annotate(revenue=Sum("subtotal"))
         .order_by("-revenue")
         .first()
@@ -136,7 +137,8 @@ def build_extended_metrics(*, ws, orders_qs, spaces_qs) -> dict:
         top_space_out = {
             "ad_space_id": top_space["ad_space_id"],
             "code": top_space["ad_space__code"],
-            "title": top_space["ad_space__title"],
+            "title": top_space["ad_space__name"],
+            "name": top_space["ad_space__name"],
             "revenue_usd": _fdec(top_space["revenue"]),
         }
 
@@ -153,7 +155,7 @@ def build_extended_metrics(*, ws, orders_qs, spaces_qs) -> dict:
     }
     space_meta = {
         s["id"]: s
-        for s in spaces_qs.values("id", "created_at", "code", "title")
+        for s in spaces_qs.values("id", "created_at", "code", "name")
     }
     under_ids = set(under_today.values_list("ad_space_id", flat=True))
     idle_rows = []
@@ -173,7 +175,8 @@ def build_extended_metrics(*, ws, orders_qs, spaces_qs) -> dict:
             {
                 "ad_space_id": sid,
                 "code": sp["code"],
-                "title": sp["title"],
+                "title": sp["name"],
+                "name": sp["name"],
                 "idle_days": idle,
                 "last_contract_end": le.isoformat() if le else None,
             }
@@ -193,10 +196,20 @@ def build_extended_metrics(*, ws, orders_qs, spaces_qs) -> dict:
         end_date__lte=soon_end,
     ).count()
 
-    # —— Por tipo de espacio ——
+    # —— Por tipo de elemento (product_type en líneas de formato) ——
     spaces_by_type = [
-        {"type": row["type"], "count": row["c"]}
-        for row in spaces_qs.values("type").annotate(c=Count("id")).order_by("-c")
+        {
+            "type": (row["product_type__slug"] or "").strip(),
+            "label": (row["product_type__name"] or "").strip(),
+            "count": row["c"],
+        }
+        for row in (
+            AdSpaceFormat.objects.filter(ad_space__in=spaces_qs)
+            .values("product_type__slug", "product_type__name")
+            .annotate(c=Count("ad_space_id", distinct=True))
+            .order_by("-c", "product_type__name")
+        )
+        if (row["product_type__slug"] or row["product_type__name"])
     ]
 
     # —— Canceladas y etapa previa (from_status del último paso a cancelada) ——

@@ -48,7 +48,7 @@ def _build_order_list_search_q(search: str) -> Q:
     q = (
         Q(client__company_name__icontains=raw)
         | Q(code__icontains=raw)
-        | Q(items__ad_space__title__icontains=raw)
+        | Q(items__ad_space__name__icontains=raw)
         | Q(items__ad_space__code__icontains=raw)
     )
     if code_compact and code_compact != raw:

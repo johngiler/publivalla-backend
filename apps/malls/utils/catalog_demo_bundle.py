@@ -90,40 +90,41 @@ def build_demo_catalog_bundle(
 
     ad_spaces: list[dict] = []
     for i in range(1, n_tomas + 1):
-        t = toma_types[(i - 1) % len(toma_types)]
+        type_slug = toma_types[(i - 1) % len(toma_types)]
         w = Decimal("4.00") + Decimal(i) * Decimal("0.25")
         h = Decimal("3.00") + Decimal((i % 3)) * Decimal("0.50")
         canon = Decimal("450") + Decimal(i) * Decimal("75")
         zone = ["Plaza central", "Pasillo norte", "Food court", "Entrada principal"][(i - 1) % 4]
-        hem = Decimal("4.5") if "pendon" in t else None
+        type_labels = {
+            "valla_vertical": "Valla vertical",
+            "valla_horizontal": "Valla horizontal",
+            "pendon_balcon": "Pendón de balcón",
+            "pendon_atrio": "Pendón de atrio",
+            "pendon_pasillo": "Pendón de pasillo",
+            "gigantografia_fachada": "Gigantografía en fachada",
+            "pendon_plaza": "Pendón de plaza",
+            "pendon_columna": "Pendón de columna",
+        }
         ad_spaces.append(
             {
                 "code": f"{prefix}-T{i}",
-                "type": t,
-                "title": f"Toma demo {i} — {zone}",
+                "name": f"Toma demo {i} — {zone}",
                 "description": (
-                    f"Espacio publicitario de demostración ({t.replace('_', ' ')}). "
+                    f"Espacio publicitario de demostración ({type_labels.get(type_slug, type_slug)}). "
                     f"Medidas {w} × {h} m. Ubicación: {zone}, nivel {1 + (i % 3)}."
                 ),
-                "width": str(w),
-                "height": str(h),
-                "quantity": 1 + (i % 2),
-                "material": "Lona vinílica demo / estructura metálica",
-                "location_description": f"{zone}, nivel {1 + (i % 3)}, referencia demo {i}.",
-                "level": f"Nivel {1 + (i % 3)}",
                 "monthly_price_usd": str(canon),
                 "status": "available",
-                "venue_zone": zone,
-                "double_sided": i % 3 == 0,
-                "production_specs": (
-                    "Arte 300 dpi, modo CMYK, sangrado 5 cm. "
-                    "Entregar PDF imprimible y vista previa en JPG."
-                ),
-                "installation_notes": (
-                    "Montaje demo: coordinar con administración del centro al menos 5 días hábiles antes. "
-                    "Respetar horario del centro."
-                ),
-                "hem_pocket_top_cm": str(hem) if hem is not None else None,
+                "formats": [
+                    {
+                        "product_type_name": type_labels.get(type_slug, type_slug.replace("_", " ").title()),
+                        "width": str(w),
+                        "height": str(h),
+                        "quantity": 1 + (i % 2),
+                        "location": f"{zone}, nivel {1 + (i % 3)}, referencia demo {i}.",
+                        "double_sided": i % 3 == 0,
+                    }
+                ],
             }
         )
 

@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.ad_spaces.serializers import AdSpaceAdminSerializer
+from apps.ad_spaces.utils.format_sync import apply_ad_space_formats_from_request
 from apps.ad_spaces.utils.gallery import apply_ad_space_gallery_from_request
 from apps.ad_spaces.models import AdSpace
 from apps.malls.models import ShoppingCenter
@@ -44,6 +45,7 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             serializer.validated_data.get("shopping_center"))
         instance = serializer.save()
         apply_ad_space_gallery_from_request(instance, self.request)
+        apply_ad_space_formats_from_request(instance, self.request)
 
     def perform_update(self, serializer):
         center = serializer.validated_data.get("shopping_center")
@@ -51,6 +53,7 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             self._assert_center_in_tenant(center)
         instance = serializer.save()
         apply_ad_space_gallery_from_request(instance, self.request)
+        apply_ad_space_formats_from_request(instance, self.request)
 
     def get_queryset(self):
         qs = AdSpace.objects.select_related("shopping_center").all().order_by(
@@ -66,12 +69,15 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(
-                    Q(code__icontains=search) | Q(title__icontains=search)
+                    Q(code__icontains=search) | Q(name__icontains=search)
                 )
             center_raw = self.request.query_params.get("shopping_center", "").strip()
             if center_raw.isdigit():
                 qs = qs.filter(shopping_center_id=int(center_raw))
-        return qs.prefetch_related("gallery_images")
+        return qs.prefetch_related(
+            "gallery_images",
+            "formats__product_type",
+        )
 
     @action(detail=False, methods=["get"], url_path="next-code")
     def next_code(self, request):

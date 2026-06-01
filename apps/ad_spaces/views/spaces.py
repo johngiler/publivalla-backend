@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.ad_spaces.models import AdSpace, AdSpaceType
+from apps.ad_spaces.models import AdSpace
 from apps.ad_spaces.serializers import (
     AdSpaceSerializer,
     CatalogMountingProviderSerializer,
@@ -104,13 +104,13 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
         return qs.filter(
             Q(code__icontains=search)
-            | Q(title__icontains=search)
-            | Q(venue_zone__icontains=search)
+            | Q(name__icontains=search)
             | Q(description__icontains=search)
-            | Q(location_description__icontains=search)
+            | Q(formats__location__icontains=search)
+            | Q(formats__product_type__name__icontains=search)
             | Q(shopping_center__name__icontains=search)
             | Q(shopping_center__city__icontains=search)
-        )
+        ).distinct()
 
     def _catalog_base_qs(self, request, *, apply_mine: bool = True):
         """Tomas publicables del tenant con filtros de listado/facets (sin prefetch)."""
@@ -133,7 +133,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(shopping_center__city__iexact=city)
         space_type = (request.query_params.get("type") or "").strip()
         if space_type:
-            qs = qs.filter(type=space_type)
+            qs = qs.filter(formats__product_type__slug=space_type).distinct()
         if apply_mine:
             mine = (request.query_params.get("mine") or "").strip().lower()
             if mine:
@@ -189,7 +189,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
             )
         center = space.shopping_center
         unit = center.rental_billing_unit
-        title = (space.title or "").strip() or "esta toma"
+        title = (space.name or "").strip() or "esta toma"
         total_units = 0
         for seg in segments:
             start = seg["start_date"]
@@ -315,23 +315,26 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="type-facets")
     def type_facets(self, request):
-        """Conteos por tipo de toma (formato publicitario) para filtros en portada."""
+        """Conteos por tipo de elemento (product_type) para filtros en portada."""
         qs = self._catalog_base_qs(request)
         total = qs.count()
-        labels = dict(AdSpaceType.choices)
         rows = (
-            qs.values("type")
-            .annotate(count=Count("id"))
-            .order_by("-count", "type")
+            qs.filter(formats__product_type__isnull=False)
+            .values("formats__product_type__slug", "formats__product_type__name")
+            .annotate(count=Count("id", distinct=True))
+            .order_by("-count", "formats__product_type__name")
         )
         items = [
             {
-                "type": r["type"],
-                "label": labels.get(r["type"], r["type"]),
+                "type": (r["formats__product_type__slug"] or "").strip(),
+                "label": (
+                    (r["formats__product_type__name"] or r["formats__product_type__slug"] or "")
+                    .strip()
+                ),
                 "count": r["count"],
             }
             for r in rows
-            if r.get("type")
+            if (r.get("formats__product_type__slug") or "").strip()
         ]
         return Response({"total": total, "items": items})
 

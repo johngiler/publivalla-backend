@@ -33,7 +33,7 @@ def _build_contracts_search_q(search: str) -> Q:
     q = (
         Q(order__client__company_name__icontains=raw)
         | Q(order__code__icontains=raw)
-        | Q(ad_space__title__icontains=raw)
+        | Q(ad_space__name__icontains=raw)
         | Q(ad_space__code__icontains=raw)
     )
     if code_compact and code_compact != raw:
@@ -227,7 +227,7 @@ class AdminMarketplaceContractsView(APIView):
                     "client_company_name": (client.company_name or "").strip(),
                     "ad_space_id": ad.id,
                     "ad_space_code": ad.code,
-                    "ad_space_title": ad.title,
+                    "ad_space_title": ad.name,
                     "ad_space_cover_image": cover,
                     "ad_space_gallery_images": gallery_urls,
                     "shopping_center_name": sc.name if sc else "",

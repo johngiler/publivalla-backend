@@ -109,7 +109,7 @@ class OrderItemAdmin(admin.ModelAdmin):
         "is_active",
     )
     list_filter = ("is_active",)
-    search_fields = ("order__code", "ad_space__code", "ad_space__title")
+    search_fields = ("order__code", "ad_space__code", "ad_space__name")
     raw_id_fields = ("order", "ad_space")
 
 

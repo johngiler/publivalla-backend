@@ -1,8 +1,30 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.ad_spaces.models import AdSpace, AdSpaceStatus
+from apps.ad_spaces.models import AdSpace, AdSpaceFormat, AdSpaceStatus
 from apps.ad_spaces.utils.nomenclature import validate_toma_code
+
+
+class AdSpaceFormatSerializer(serializers.ModelSerializer):
+    product_type_id = serializers.IntegerField(source="product_type.id", read_only=True)
+    product_type_name = serializers.CharField(source="product_type.name", read_only=True)
+    product_type_slug = serializers.CharField(source="product_type.slug", read_only=True)
+
+    class Meta:
+        model = AdSpaceFormat
+        fields = (
+            "id",
+            "product_type_id",
+            "product_type_name",
+            "product_type_slug",
+            "width",
+            "height",
+            "quantity",
+            "location",
+            "double_sided",
+            "sort_order",
+        )
+        read_only_fields = fields
 
 
 class AdSpaceAdminSerializer(serializers.ModelSerializer):
@@ -17,6 +39,11 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
     )
     status_label = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField(read_only=True)
+    formats = AdSpaceFormatSerializer(many=True, read_only=True)
+    location_image_url = serializers.SerializerMethodField(read_only=True)
+    production_image_url = serializers.SerializerMethodField(read_only=True)
+    # Alias legacy para consumidores que aún lean `title`
+    title = serializers.CharField(source="name", read_only=True)
 
     class Meta:
         model = AdSpace
@@ -27,31 +54,29 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
             "shopping_center_slug",
             "shopping_center_name",
             "shopping_center_city",
-            "type",
+            "name",
             "title",
             "description",
-            "width",
-            "height",
-            "quantity",
-            "material",
-            "location_description",
-            "level",
             "monthly_price_usd",
             "status",
             "status_label",
             "cover_image",
+            "location_image",
+            "production_image",
+            "location_image_url",
+            "production_image_url",
             "gallery_images",
-            "venue_zone",
-            "double_sided",
-            "production_specs",
-            "installation_notes",
-            "hem_pocket_top_cm",
+            "formats",
             "is_active",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("created_at", "updated_at")
-        extra_kwargs = {"cover_image": {"required": False, "allow_null": True}}
+        read_only_fields = ("created_at", "updated_at", "formats")
+        extra_kwargs = {
+            "cover_image": {"required": False, "allow_null": True},
+            "location_image": {"required": False, "allow_null": True},
+            "production_image": {"required": False, "allow_null": True},
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -84,6 +109,26 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
 
     def get_status_label(self, obj):
         return obj.get_status_display()
+
+    def _absolute_media(self, f) -> str | None:
+        if not f:
+            return None
+        request = self.context.get("request")
+        url = f.url
+        if request:
+            uri = request.build_absolute_uri(url)
+            if uri.startswith("http://") and request.META.get(
+                "HTTP_X_FORWARDED_PROTO", ""
+            ).lower() == "https":
+                return "https://" + uri[7:]
+            return uri
+        return url
+
+    def get_location_image_url(self, obj):
+        return self._absolute_media(obj.location_image)
+
+    def get_production_image_url(self, obj):
+        return self._absolute_media(obj.production_image)
 
     def get_gallery_images(self, obj):
         out = []
