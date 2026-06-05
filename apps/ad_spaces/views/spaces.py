@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.ad_spaces.models import AdSpace
+from apps.ad_spaces.models import AdSpace, AdSpaceFormat
 from apps.ad_spaces.serializers import (
     AdSpaceSerializer,
     CatalogMountingProviderSerializer,
@@ -157,6 +157,12 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         qs = self._catalog_base_qs(self.request).select_related("shopping_center")
         return qs.prefetch_related(
             "gallery_images",
+            Prefetch(
+                "formats",
+                queryset=AdSpaceFormat.objects.select_related("product_type").order_by(
+                    "sort_order", "id"
+                ),
+            ),
             Prefetch(
                 "shopping_center__mounting_providers",
                 queryset=MountingProvider.objects.filter(is_active=True).order_by(

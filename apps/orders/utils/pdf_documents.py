@@ -6,12 +6,18 @@ from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
+from django.db.models import Prefetch
 from django.utils import timezone
 
+from apps.ad_spaces.models import AdSpaceFormat
 from apps.ad_spaces.utils.display import (
+    ad_space_all_location_texts,
+    ad_space_element_summary,
+    ad_space_formats_ordered,
     ad_space_location_text,
-    ad_space_primary_format,
-    ad_space_type_label,
+    format_double_sided_observation,
+    format_medidas_label,
+    format_type_name,
 )
 
 from reportlab.lib import colors
@@ -216,6 +222,47 @@ def _party_signature_cell(
     return inner
 
 
+def _order_items_for_pdf(order):
+    """Líneas del pedido con toma, centro y tipos/medidas (formats) precargados."""
+    fmt_qs = AdSpaceFormat.objects.select_related("product_type").order_by(
+        "sort_order", "id"
+    )
+    return list(
+        order.items.select_related("ad_space", "ad_space__shopping_center")
+        .prefetch_related(Prefetch("ad_space__formats", queryset=fmt_qs))
+        .all()
+    )
+
+
+def _municipality_table_rows_for_item(order_item) -> list[dict]:
+    """Una fila por línea de tipo del espacio; si no hay tipos, una fila resumen."""
+    ad = order_item.ad_space
+    formats = ad_space_formats_ordered(ad)
+    if not formats:
+        return [
+            {
+                "tipo": (ad.name or "").strip() or "—",
+                "cantidad": 1,
+                "medidas": "—",
+                "ubicacion": ad_space_location_text(ad) or "—",
+                "obs": "—",
+            }
+        ]
+    rows = []
+    for fmt in formats:
+        ubic = (fmt.location or "").strip() or ad_space_location_text(ad) or "—"
+        rows.append(
+            {
+                "tipo": format_type_name(fmt),
+                "cantidad": fmt.quantity if fmt.quantity is not None else 1,
+                "medidas": format_medidas_label(fmt),
+                "ubicacion": ubic,
+                "obs": format_double_sided_observation(fmt),
+            }
+        )
+    return rows
+
+
 def build_negotiation_sheet_pdf_bytes(
     *,
     order,
@@ -223,8 +270,7 @@ def build_negotiation_sheet_pdf_bytes(
 ) -> bytes:
     """Hoja de negociación (referencia visual: campos centrados / arrendador-inquilino)."""
     client = order.client
-    items = list(order.items.select_related(
-        "ad_space", "ad_space__shopping_center").all())
+    items = _order_items_for_pdf(order)
     if not items:
         raise ValueError("El pedido no tiene líneas.")
     sc = items[0].ad_space.shopping_center
@@ -239,8 +285,8 @@ def build_negotiation_sheet_pdf_bytes(
     if rep_ci:
         rep_line = f"{rep} (C.I: {rep_ci})"
 
-    # Resumen de elementos: códigos de toma
-    codes = ", ".join(it.ad_space.code for it in items)
+    # Resumen de elementos: códigos de toma (con tipos si hay varios)
+    codes = ", ".join(ad_space_element_summary(it.ad_space) for it in items)
     start = min(it.start_date for it in items)
     end = max(it.end_date for it in items)
     months = (end.year - start.year) * 12 + (end.month - start.month) + 1
@@ -271,7 +317,15 @@ def build_negotiation_sheet_pdf_bytes(
         else:
             importe_lines.append(f"{head}: ${sub:,.2f} USD sin IVA")
         if title:
-            description_lines.append(f"{code} — {title}" if code else title)
+            fmt_labels = []
+            for fmt in ad_space_formats_ordered(it.ad_space):
+                label = format_type_name(fmt)
+                if label != "—" and label not in fmt_labels:
+                    fmt_labels.append(label)
+            extra = f" — {', '.join(fmt_labels)}" if fmt_labels else ""
+            description_lines.append(
+                f"{code} — {title}{extra}" if code else f"{title}{extra}"
+            )
         elif code:
             description_lines.append(code)
     importe_txt = "<br/>".join(_escape(x) for x in importe_lines)
@@ -389,8 +443,7 @@ def build_negotiation_sheet_pdf_bytes(
 def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     """Carta modelo para alcaldía (referencia visual imagen 2)."""
     client = order.client
-    items = list(order.items.select_related(
-        "ad_space", "ad_space__shopping_center").all())
+    items = _order_items_for_pdf(order)
     if not items:
         raise ValueError("El pedido no tiene líneas.")
     sc = items[0].ad_space.shopping_center
@@ -420,9 +473,9 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
 
     loc_bits = []
     for it in items:
-        loc_bits.append(
-            f"{ad_space_location_text(it.ad_space)} ({sc.name})"
-        )
+        locs = ad_space_all_location_texts(it.ad_space)
+        loc_txt = ", ".join(locs) if locs else ad_space_location_text(it.ad_space)
+        loc_bits.append(f"{loc_txt} ({sc.name})")
     location_txt = "; ".join(loc_bits) if loc_bits else sc.name
 
     start = min(it.start_date for it in items)
@@ -472,28 +525,16 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
         ]
     ]
     for it in items:
-        ad = it.ad_space
-        fmt = ad_space_primary_format(ad)
-        w = fmt.width if fmt and fmt.width is not None else ""
-        h = fmt.height if fmt and fmt.height is not None else ""
-        medidas = f"{w}×{h}" if w and h else "—"
-        tipo = ad_space_type_label(ad) or "—"
-        ubic = ad_space_location_text(ad) or "—"
-        cara = (
-            "Elemento a doble cara"
-            if fmt and fmt.double_sided
-            else "Elemento a una cara"
-        )
-        obs = cara
-        table_data.append(
-            [
-                _p_cell(str(tipo), cell_st),
-                _p_cell(str(fmt.quantity if fmt else 1), cell_st),
-                _p_cell(str(medidas), cell_st),
-                _p_cell(ubic, tight_st),
-                _p_cell(obs, tight_st),
-            ]
-        )
+        for row in _municipality_table_rows_for_item(it):
+            table_data.append(
+                [
+                    _p_cell(str(row["tipo"]), cell_st),
+                    _p_cell(str(row["cantidad"]), cell_st),
+                    _p_cell(str(row["medidas"]), cell_st),
+                    _p_cell(row["ubicacion"], tight_st),
+                    _p_cell(row["obs"], tight_st),
+                ]
+            )
     t = Table(table_data, colWidths=tw, repeatRows=1)
     t.setStyle(
         TableStyle(
@@ -533,8 +574,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     from apps.orders.services import order_line_pricing_totals
 
     client = order.client
-    items = list(order.items.select_related(
-        "ad_space", "ad_space__shopping_center").all())
+    items = _order_items_for_pdf(order)
     total = order.total_amount or Decimal("0")
     catalog, discount = order_line_pricing_totals(order)
     iva = (total * IVA_RATE).quantize(Decimal("0.01"))
@@ -635,8 +675,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
 def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
     """Solicitud de permiso de instalación enviada por la empresa (PDF interno / correo)."""
     client = order.client
-    items = list(order.items.select_related(
-        "ad_space", "ad_space__shopping_center").all())
+    items = _order_items_for_pdf(order)
     sc = items[0].ad_space.shopping_center if items else None
     center_name = (sc.name if sc else "") or "—"
     codes = ", ".join(it.ad_space.code for it in items) if items else "—"

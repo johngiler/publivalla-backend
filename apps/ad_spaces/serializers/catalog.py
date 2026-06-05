@@ -178,17 +178,29 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     def get_hem_pocket_top_cm(self, obj):
         return None
 
-    def get_location_image(self, obj):
-        f = obj.location_image
-        if not f:
+    def _absolute_media_url(self, url: str) -> str:
+        if not url:
+            return ""
+        request = self.context.get("request")
+        if request:
+            uri = request.build_absolute_uri(url)
+            if uri.startswith("http://") and request.META.get(
+                "HTTP_X_FORWARDED_PROTO", ""
+            ).lower() == "https":
+                return "https://" + uri[7:]
+            return uri
+        return url
+
+    def _absolute_media_file(self, field) -> str | None:
+        if not field:
             return None
-        return self._absolute_media_url(f.url)
+        return self._absolute_media_url(field.url) or None
+
+    def get_location_image(self, obj):
+        return self._absolute_media_file(obj.location_image)
 
     def get_production_image(self, obj):
-        f = obj.production_image
-        if not f:
-            return None
-        return self._absolute_media_url(f.url)
+        return self._absolute_media_file(obj.production_image)
 
     def get_catalog_public(self, obj):
         return shopping_center_allows_public_catalog(obj.shopping_center)
@@ -295,14 +307,6 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "previous": None,
             "results": data,
         }
-
-    def _absolute_media_url(self, url: str) -> str:
-        if not url:
-            return ""
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(url)
-        return url
 
     def get_cover_image(self, obj):
         u = ad_space_effective_cover_url(obj)
