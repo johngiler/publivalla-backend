@@ -678,7 +678,6 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
     items = _order_items_for_pdf(order)
     sc = items[0].ad_space.shopping_center if items else None
     center_name = (sc.name if sc else "") or "—"
-    codes = ", ".join(it.ad_space.code for it in items) if items else "—"
     ref = (order.code or "").strip() or f"#{order.pk}"
     now = timezone.localtime(timezone.now())
 
@@ -720,7 +719,6 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
         row("Empresa", (client.company_name or "").strip() or "—"),
         row("RIF empresa", (client.rif or "").strip() or "—"),
         row("Centro comercial", center_name),
-        row("Tomas / elementos", codes),
         row("Fecha de montaje indicada",
             permit.mounting_date.strftime("%d/%m/%Y")),
         row("Empresa de instalación",
