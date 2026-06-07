@@ -156,6 +156,25 @@ def client_cover_upload(instance, filename: str) -> str:
     return _join_under_workspace_slug(owner, "clients", "covers", filename=filename)
 
 
+def _workspace_from_client_brand(instance) -> object | None:
+    client = getattr(instance, "client", None)
+    if client is None and getattr(instance, "client_id", None):
+        Client = apps.get_model("clients", "Client")
+        client = (
+            Client.objects.select_related("workspace")
+            .filter(pk=instance.client_id)
+            .only("workspace__slug")
+            .first()
+        )
+    return _workspace_from_client(client) if client is not None else None
+
+
+def client_brand_logo_upload(instance, filename: str) -> str:
+    ws = _workspace_from_client_brand(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, "clients", "brands", filename=filename)
+
+
 def user_profile_cover_upload(instance, filename: str) -> str:
     ws = getattr(instance, "workspace", None)
     if ws is None and getattr(instance, "workspace_id", None):

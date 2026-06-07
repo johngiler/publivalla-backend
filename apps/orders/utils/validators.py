@@ -28,7 +28,6 @@ PIPELINE_STATUSES: tuple[str, ...] = (
 
 ORDER_LINE_PRICING_EDITABLE_STATUSES: frozenset[str] = frozenset(
     {
-        OrderStatus.SUBMITTED,
         OrderStatus.CLIENT_APPROVED,
         OrderStatus.ART_APPROVED,
     }
@@ -62,8 +61,13 @@ def order_should_regenerate_negotiation_pdf(order) -> bool:
 
 
 def order_line_pricing_editable(order) -> bool:
-    """Descuentos por toma: editable hasta facturar (renegociación aunque exista hoja firmada)."""
+    """Precios, inicio de alquiler y archivos comerciales: solo tras aprobar la solicitud."""
     return order.status in ORDER_LINE_PRICING_EDITABLE_STATUSES
+
+
+def order_admin_commercial_editable(order) -> bool:
+    """Alias de ``order_line_pricing_editable`` para validaciones de admin."""
+    return order_line_pricing_editable(order)
 
 
 def ad_space_allows_marketplace_reservation(ad_space) -> bool:
@@ -137,16 +141,18 @@ def hold_expires_at_from_now(hours: int = 72) -> datetime:
 
 
 def first_allowed_monthly_rental_start_date(ref: date | None = None) -> date:
-    """
-    Primer día del primer mes reservable (el mes calendario actual y los anteriores quedan excluidos).
-    """
+    from apps.orders.utils.rental_month_eligibility import (
+        first_allowed_monthly_rental_start_date as _first_allowed,
+    )
+
     r = ref if ref is not None else timezone.localdate()
-    y, m = r.year, r.month
-    if m == 12:
-        return date(y + 1, 1, 1)
-    return date(y, m + 1, 1)
+    return _first_allowed(r)
 
 
 def rental_start_allowed_for_marketplace(start: date, ref: date | None = None) -> bool:
-    """True si la fecha de inicio (típicamente día 1 del mes) no cae en mes pasado ni en el mes en curso."""
-    return start >= first_allowed_monthly_rental_start_date(ref)
+    from apps.orders.utils.rental_month_eligibility import (
+        rental_start_allowed_for_marketplace as _allowed,
+    )
+
+    r = ref if ref is not None else timezone.localdate()
+    return _allowed(start, r)

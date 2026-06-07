@@ -217,8 +217,8 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                             "La fecha de inicio no puede ser hoy ni un día pasado."
                             if unit == "calendar_day"
                             else (
-                                "No puedes reservar desde un mes pasado ni desde el mes en curso. "
-                                "Elige un inicio a partir del próximo mes."
+                                "No puedes reservar desde un mes pasado. "
+                                "El mes en curso solo está disponible hasta el día 15."
                             )
                         ),
                     },

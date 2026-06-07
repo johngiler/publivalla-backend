@@ -38,8 +38,9 @@ def notify_client_after_order_client_approved(order: Order) -> None:
     Cuando el admin pasa la orden a «Solicitud aprobada» (estado client_approved):
 
     - Si la empresa ya tiene usuario marketplace: no hace nada.
-    - Si no: crea el usuario (mismo flujo que «Generar usuario» en clientes) y envía
-      correo con enlace ``/registro`` para definir contraseña, indicando el correo de acceso.
+    - Si no: crea el usuario (misma función que «Generar usuario», pero **sin** el correo
+      genérico de alta) y envía aquí el correo de activación por pedido aprobado
+      (incluye montaje, etc.). No usar ``schedule_notify_marketplace_client_user_created``.
     """
     client = order.client
     if client_has_marketplace_user(client):

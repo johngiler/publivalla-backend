@@ -470,6 +470,214 @@ def build_client_activation_transactional_email(
     return subject, "\n".join(text_lines), html_body, inline_logo
 
 
+def build_admin_welcome_transactional_email(
+    *,
+    marketplace_title: str,
+    contact_name: str,
+    login_email: str,
+    login_url: str,
+    accent_hex: str | None,
+    workspace,
+) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
+    """Correo de alta como administrador del marketplace."""
+    mp = (marketplace_title or "").strip() or "Marketplace"
+    accent = _cta_background_hex(accent_hex)
+    greet = (contact_name or "").strip()
+    access_email = (login_email or "").strip()
+
+    subject = f"{mp}: acceso como administrador"
+    headline = "Tu cuenta de administrador está lista"
+    lead_main = (
+        "Te registraron como administrador del marketplace. "
+        "Usa el botón de abajo para iniciar sesión con el correo indicado."
+    )
+    lead = f"Hola {greet}, {lead_main}" if greet else lead_main
+
+    rows: list[tuple[str, str]] = [
+        ("Correo para iniciar sesión", access_email),
+        ("Rol", "Administrador del marketplace"),
+    ]
+    footer = (
+        "Si no conoces tu contraseña, pide ayuda a quien creó tu usuario o usa "
+        "«Olvidé mi contraseña» en la pantalla de inicio de sesión. "
+        "Este mensaje lo envía el sistema de notificaciones del marketplace."
+    )
+
+    inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
+    brand_alt = (
+        (
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
+            .strip()
+            if workspace is not None
+            else ""
+        )
+        or mp
+    )
+    html_body = _render_transactional_shell(
+        document_title=subject,
+        headline=headline,
+        lead=lead,
+        rows=rows,
+        cta_url=login_url,
+        cta_label="Iniciar sesión",
+        footer_note=footer,
+        accent_hex=accent,
+        inline_logo=inline_logo,
+        tenant_logo_alt=brand_alt,
+    )
+
+    text_lines = [headline, "", lead, ""]
+    for label, value in rows:
+        if (value or "").strip():
+            text_lines.append(f"{label}: {value}")
+    text_lines.extend(["", f"Iniciar sesión: {login_url}", "", footer])
+    return subject, "\n".join(text_lines), html_body, inline_logo
+
+
+def build_client_marketplace_welcome_transactional_email(
+    *,
+    marketplace_title: str,
+    company_name: str,
+    contact_name: str,
+    login_email: str,
+    action_url: str,
+    action_label: str,
+    needs_password_setup: bool,
+    accent_hex: str | None,
+    workspace,
+) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
+    """Correo de alta de usuario cliente marketplace (con o sin contraseña definida)."""
+    mp = (marketplace_title or "").strip() or "Marketplace"
+    company = (company_name or "").strip() or "tu empresa"
+    accent = _cta_background_hex(accent_hex)
+    greet = (contact_name or "").strip()
+    access_email = (login_email or "").strip()
+
+    if needs_password_setup:
+        subject = f"{mp}: activa tu acceso al marketplace"
+        headline = "Completa tu acceso"
+        lead_main = (
+            f"Te crearon una cuenta para la empresa «{company}». "
+            "Usa el botón de abajo para definir tu contraseña e iniciar sesión."
+        )
+        footer = (
+            "El enlace caduca en 14 días. Inicia sesión con el correo indicado y la contraseña "
+            "que definas. Este mensaje lo envía el sistema de notificaciones del marketplace."
+        )
+    else:
+        subject = f"{mp}: acceso al marketplace"
+        headline = "Tu cuenta está lista"
+        lead_main = (
+            f"Te registraron en el marketplace para la empresa «{company}». "
+            "Usa el botón de abajo para iniciar sesión con el correo indicado."
+        )
+        footer = (
+            "Si no conoces tu contraseña, usa «Olvidé mi contraseña» en la pantalla de inicio "
+            "de sesión o contacta a quien creó tu usuario. "
+            "Este mensaje lo envía el sistema de notificaciones del marketplace."
+        )
+    lead = f"Hola {greet}, {lead_main}" if greet else lead_main
+
+    rows: list[tuple[str, str]] = [
+        ("Correo para iniciar sesión", access_email),
+        ("Empresa", company),
+        ("Rol", "Cliente marketplace"),
+    ]
+
+    inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
+    brand_alt = (
+        (
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
+            .strip()
+            if workspace is not None
+            else ""
+        )
+        or mp
+    )
+    html_body = _render_transactional_shell(
+        document_title=subject,
+        headline=headline,
+        lead=lead,
+        rows=rows,
+        cta_url=action_url,
+        cta_label=action_label,
+        footer_note=footer,
+        accent_hex=accent,
+        inline_logo=inline_logo,
+        tenant_logo_alt=brand_alt,
+    )
+
+    text_lines = [headline, "", lead, ""]
+    for label, value in rows:
+        if (value or "").strip():
+            text_lines.append(f"{label}: {value}")
+    text_lines.extend(["", f"{action_label}: {action_url}", "", footer])
+    return subject, "\n".join(text_lines), html_body, inline_logo
+
+
+def build_password_reset_transactional_email(
+    *,
+    marketplace_title: str,
+    contact_name: str,
+    login_email: str,
+    reset_url: str,
+    accent_hex: str | None,
+    workspace,
+) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
+    """Correo con enlace para restablecer contraseña."""
+    mp = (marketplace_title or "").strip() or "Marketplace"
+    accent = _cta_background_hex(accent_hex)
+    greet = (contact_name or "").strip()
+    access_email = (login_email or "").strip()
+
+    subject = f"{mp}: restablecer contraseña"
+    headline = "Restablece tu contraseña"
+    lead_main = (
+        "Recibimos una solicitud para restablecer la contraseña de tu cuenta. "
+        "Si fuiste tú, usa el botón de abajo."
+    )
+    lead = f"Hola {greet}, {lead_main}" if greet else lead_main
+
+    rows: list[tuple[str, str]] = [("Correo de la cuenta", access_email)]
+    footer = (
+        "El enlace caduca en 24 horas. Si no solicitaste este cambio, ignora este mensaje. "
+        "Tu contraseña actual seguirá siendo válida."
+    )
+
+    inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
+    brand_alt = (
+        (
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
+            .strip()
+            if workspace is not None
+            else ""
+        )
+        or mp
+    )
+    html_body = _render_transactional_shell(
+        document_title=subject,
+        headline=headline,
+        lead=lead,
+        rows=rows,
+        cta_url=reset_url,
+        cta_label="Restablecer contraseña",
+        footer_note=footer,
+        accent_hex=accent,
+        inline_logo=inline_logo,
+        tenant_logo_alt=brand_alt,
+    )
+
+    text_lines = [headline, "", lead, ""]
+    for label, value in rows:
+        if (value or "").strip():
+            text_lines.append(f"{label}: {value}")
+    text_lines.extend(["", f"Restablecer contraseña: {reset_url}", "", footer])
+    return subject, "\n".join(text_lines), html_body, inline_logo
+
+
 OrderClientActivityKind = Literal["payment_receipt",
                                   "negotiation_signed", "art_upload"]
 

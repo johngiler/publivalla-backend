@@ -232,6 +232,22 @@ class OrderItem(TimeStampedActiveModel):
         decimal_places=2,
         help_text="Subtotal de catálogo al enviar el pedido; referencia para descuentos por toma.",
     )
+    custom_rental_start_enabled = models.BooleanField(
+        default=False,
+        help_text="Si está activo, el alquiler comienza en custom_rental_start_date (día del mes inicial).",
+    )
+    custom_rental_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Día de inicio acordado dentro del mes inicial de la reserva.",
+    )
+    first_month_agreed_subtotal = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Importe acordado solo para el mes inicial cuando el inicio es parcial.",
+    )
 
     def __str__(self):
         return f"Item {self.pk} for order {self.order_id}"

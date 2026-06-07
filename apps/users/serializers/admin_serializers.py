@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db import transaction
 from rest_framework import serializers
 
 from apps.clients.models import Client
@@ -158,6 +159,23 @@ class UserAdminCreateSerializer(serializers.Serializer):
         profile.full_clean()
         profile.save()
         revoke_django_privileges(user)
+        uid = user.pk
+        if role == UserProfile.Role.ADMIN:
+
+            def _notify_admin_created() -> None:
+                from apps.users.tasks import schedule_notify_marketplace_admin_user_created
+
+                schedule_notify_marketplace_admin_user_created(uid)
+
+            transaction.on_commit(_notify_admin_created)
+        elif role == UserProfile.Role.CLIENT:
+
+            def _notify_client_created() -> None:
+                from apps.users.tasks import schedule_notify_marketplace_client_user_created
+
+                schedule_notify_marketplace_client_user_created(uid)
+
+            transaction.on_commit(_notify_client_created)
         return user
 
 
@@ -232,6 +250,9 @@ class UserAdminUpdateSerializer(serializers.Serializer):
         return value
 
     def update(self, instance, validated_data):
+        profile_before, _ = UserProfile.objects.get_or_create(user=instance)
+        was_admin = profile_before.role == UserProfile.Role.ADMIN
+
         client_id_provided = "client_id" in validated_data
         client_id = validated_data.pop("client_id", None) if client_id_provided else None
 
@@ -290,5 +311,15 @@ class UserAdminUpdateSerializer(serializers.Serializer):
 
         if profile.role in (UserProfile.Role.CLIENT, UserProfile.Role.ADMIN):
             revoke_django_privileges(instance)
+
+        if profile.role == UserProfile.Role.ADMIN and not was_admin:
+            uid = instance.pk
+
+            def _notify_admin_promoted() -> None:
+                from apps.users.tasks import schedule_notify_marketplace_admin_user_created
+
+                schedule_notify_marketplace_admin_user_created(uid)
+
+            transaction.on_commit(_notify_admin_promoted)
 
         return instance

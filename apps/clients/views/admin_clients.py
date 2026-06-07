@@ -113,6 +113,17 @@ class ClientViewSet(AdminModelViewSet):
         email, token, registration_query = build_client_registration_link_parts(
             client=client, user=user
         )
+
+        from django.db import transaction
+        from apps.users.tasks import schedule_notify_marketplace_client_user_created
+
+        uid = user.pk
+
+        def _notify_client_user() -> None:
+            schedule_notify_marketplace_client_user_created(uid)
+
+        transaction.on_commit(_notify_client_user)
+
         return Response(
             {
                 "user_id": user.id,
@@ -138,12 +149,26 @@ class MyCompanyView(APIView):
         return data.get("remove_company_cover") in (True, "true", "1", "on")
 
     def _serialize_company(self, client, request):
-        return Response(ClientAdminSerializer(client, context={"request": request}).data)
+        from apps.clients.models import Client
+
+        c = (
+            Client.objects.filter(pk=client.pk)
+            .prefetch_related("brands")
+            .first()
+        )
+        return Response(ClientAdminSerializer(c, context={"request": request}).data)
 
     def get(self, request):
+        from apps.clients.models import Client
+
         c = get_marketplace_client(request.user)
         if c is None:
             return Response(None, status=status.HTTP_204_NO_CONTENT)
+        c = (
+            Client.objects.filter(pk=c.pk)
+            .prefetch_related("brands")
+            .first()
+        )
         return self._serialize_company(c, request)
 
     def post(self, request):

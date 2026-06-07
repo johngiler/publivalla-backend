@@ -103,14 +103,15 @@ def first_allowed_rental_start_date(
     unit: str,
     ref: date | None = None,
 ) -> date:
-    """Primer día reservable: mes → día 1 del próximo mes; día → mañana."""
+    """Primer día reservable: mes → mes actual (hasta día 15) o próximo mes; día → mañana."""
     r = ref if ref is not None else timezone.localdate()
     if is_daily_billing(unit):
         return r + timedelta(days=1)
-    y, m = r.year, r.month
-    if m == 12:
-        return date(y + 1, 1, 1)
-    return date(y, m + 1, 1)
+    from apps.orders.utils.rental_month_eligibility import (
+        first_allowed_monthly_rental_start_date,
+    )
+
+    return first_allowed_monthly_rental_start_date(r)
 
 
 def rental_start_allowed(unit: str, start: date, ref: date | None = None) -> bool:

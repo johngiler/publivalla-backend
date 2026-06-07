@@ -13,6 +13,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from apps.ad_spaces.views import AdSpaceAdminViewSet, AdSpaceProductTypeAdminViewSet, AdSpaceViewSet
 from apps.clients.views import (
     ClientViewSet,
+    MyCompanyBrandDetailView,
+    MyCompanyBrandListCreateView,
+    MyCompanyMemberDetailView,
+    MyCompanyMemberListCreateView,
     MyCompanyView,
     MyContractsView,
     MyFavoriteDetailView,
@@ -38,6 +42,9 @@ from apps.users.views import (
     ActivateClientAccountView,
     MePasswordView,
     MeView,
+    PasswordResetConfirmView,
+    PasswordResetIntentView,
+    PasswordResetRequestView,
     PasswordSetupIntentView,
     SetInitialPasswordView,
     UserAdminViewSet,
@@ -127,9 +134,44 @@ urlpatterns = [
         SetInitialPasswordView.as_view(),
         name="set-initial-password",
     ),
+    path(
+        "api/auth/password-reset-request/",
+        PasswordResetRequestView.as_view(),
+        name="password-reset-request",
+    ),
+    path(
+        "api/auth/password-reset-intent/",
+        PasswordResetIntentView.as_view(),
+        name="password-reset-intent",
+    ),
+    path(
+        "api/auth/password-reset-confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password-reset-confirm",
+    ),
     path("api/", include(router.urls)),
     path("api/catalog/", include(catalog_router.urls)),
     path("api/me/company/", MyCompanyView.as_view(), name="my-company"),
+    path(
+        "api/me/company/brands/",
+        MyCompanyBrandListCreateView.as_view(),
+        name="my-company-brands",
+    ),
+    path(
+        "api/me/company/brands/<int:brand_id>/",
+        MyCompanyBrandDetailView.as_view(),
+        name="my-company-brand-detail",
+    ),
+    path(
+        "api/me/company/members/",
+        MyCompanyMemberListCreateView.as_view(),
+        name="my-company-members",
+    ),
+    path(
+        "api/me/company/members/<int:member_user_id>/",
+        MyCompanyMemberDetailView.as_view(),
+        name="my-company-member-detail",
+    ),
     path("api/me/contracts/", MyContractsView.as_view(), name="my-contracts"),
     path("api/me/favorites/", MyFavoritesView.as_view(), name="my-favorites"),
     path(

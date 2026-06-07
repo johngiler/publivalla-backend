@@ -2,7 +2,7 @@ from django.db import models
 
 from apps.common.models import TimeStampedActiveModel
 from apps.common.utils.image_webp import ensure_imagefields_webp
-from apps.common.utils.media_layout import client_cover_upload
+from apps.common.utils.media_layout import client_brand_logo_upload, client_cover_upload
 
 
 class ClientStatus(models.TextChoices):
@@ -75,6 +75,70 @@ class Client(TimeStampedActiveModel):
 
     def __str__(self):
         return self.company_name
+
+
+class ClientBrand(TimeStampedActiveModel):
+    """Marca promocionada por una empresa cliente (p. ej. Adidas, Victoria's Secret)."""
+
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="brands",
+    )
+    name = models.CharField(max_length=255)
+    logo = models.ImageField(
+        upload_to=client_brand_logo_upload,
+        blank=True,
+        null=True,
+        help_text="Logo de marca: media/<slug>/clients/brands/AÑO/MES/.",
+    )
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("client", "name"),
+                name="clients_clientbrand_client_name_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        _webp_fields = ("logo",)
+        _uf = kwargs.get("update_fields")
+        if _uf is None or any(f in _uf for f in _webp_fields):
+            ensure_imagefields_webp(self, _webp_fields)
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class ClientMemberBrand(models.Model):
+    """Marcas de la empresa asignadas a un usuario cliente (puede ser ninguna, una o varias)."""
+
+    profile = models.ForeignKey(
+        "users.UserProfile",
+        on_delete=models.CASCADE,
+        related_name="brand_links",
+    )
+    brand = models.ForeignKey(
+        ClientBrand,
+        on_delete=models.CASCADE,
+        related_name="member_links",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["brand__name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("profile", "brand"),
+                name="clients_clientmemberbrand_profile_brand_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.profile_id} → {self.brand_id}"
 
 
 class ClientAdSpaceFavorite(TimeStampedActiveModel):

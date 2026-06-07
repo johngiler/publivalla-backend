@@ -20,15 +20,15 @@ def month_selectable_for_marketplace(
     *,
     ref: date | None = None,
 ) -> bool:
-    """Mes elegible: no ocupado en calendario y no pasado ni mes en curso."""
+    """Mes elegible: libre y no pasado; el mes en curso solo hasta el día 15."""
+    from apps.orders.utils.rental_month_eligibility import calendar_month_not_selectable
+
     ref = ref if ref is not None else calendar_ref_date()
     if month < 1 or month > 12 or len(occupied) != 12:
         return False
     if occupied[month - 1]:
         return False
-    if year < ref.year:
-        return False
-    if year == ref.year and month <= ref.month:
+    if calendar_month_not_selectable(year, month, ref):
         return False
     return True
 

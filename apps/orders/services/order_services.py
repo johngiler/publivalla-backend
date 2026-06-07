@@ -128,8 +128,8 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
                         "La fecha de inicio no puede ser hoy ni un día pasado."
                         if unit == "calendar_day"
                         else (
-                            "La fecha de inicio no puede caer en un mes pasado ni en el mes en curso. "
-                            "Elige un período que comience desde el próximo mes."
+                            "La fecha de inicio no puede caer en un mes pasado. "
+                            "El mes en curso solo está disponible hasta el día 15."
                         )
                     ),
                 }
@@ -236,8 +236,8 @@ def update_order_line_pricing(
         raise serializers.ValidationError(
             {
                 "detail": (
-                    "Solo puedes ajustar precios en pedidos enviados o en gestión comercial "
-                    "antes de facturar."
+                    "Solo puedes ajustar precios e inicio de alquiler tras aprobar la solicitud "
+                    "y antes de facturar."
                 )
             }
         )
@@ -256,8 +256,17 @@ def update_order_line_pricing(
     if not by_id:
         raise serializers.ValidationError({"detail": "El pedido no tiene líneas."})
 
+    from apps.orders.utils.custom_rental_start import (
+        agreed_subtotal_with_custom_start,
+        catalog_subtotal_with_custom_start,
+        reservation_month_anchor,
+        validate_custom_rental_start_date,
+    )
+    from apps.orders.utils.rental_billing import line_subtotal_for_center
+
     seen: set[int] = set()
     total = Decimal("0")
+    ref_today = timezone.localdate()
 
     for row in items:
         item_id = row["id"]
@@ -271,20 +280,152 @@ def update_order_line_pricing(
             raise serializers.ValidationError(
                 {"items": f"La línea {item_id} no pertenece a este pedido."}
             )
-        sub = row["subtotal"]
-        orig = item.original_subtotal if item.original_subtotal is not None else item.subtotal
-        if sub > orig:
-            raise serializers.ValidationError(
-                {
-                    "items": (
-                        f"El importe acordado de {item.ad_space.code} no puede superar "
-                        f"el subtotal de catálogo (${orig:,.2f})."
-                    )
-                }
+
+        center = item.ad_space.shopping_center
+        rental_start_in_payload = "custom_rental_start_enabled" in row
+        custom_enabled = (
+            bool(row["custom_rental_start_enabled"])
+            if rental_start_in_payload
+            else item.custom_rental_start_enabled
+        )
+        update_fields = ["subtotal", "updated_at"]
+
+        if rental_start_in_payload and custom_enabled:
+            custom_date = row.get("custom_rental_start_date")
+            first_month = row.get("first_month_agreed_subtotal")
+            if custom_date is None:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"Indica la fecha de inicio de alquiler para {item.ad_space.code}."
+                        )
+                    }
+                )
+            if first_month is None:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"Indica el importe del mes inicial para {item.ad_space.code}."
+                        )
+                    }
+                )
+            anchor = reservation_month_anchor(item.start_date)
+            try:
+                validate_custom_rental_start_date(anchor, custom_date, ref=ref_today)
+            except ValueError as exc:
+                raise serializers.ValidationError({"items": str(exc)}) from exc
+
+            catalog = catalog_subtotal_with_custom_start(
+                item.monthly_price,
+                center,
+                custom_date,
+                item.end_date,
             )
-        item.subtotal = sub
-        item.save(update_fields=["subtotal", "updated_at"])
-        total += sub
+            computed_sub = agreed_subtotal_with_custom_start(
+                first_month,
+                item.monthly_price,
+                center,
+                custom_date,
+                item.end_date,
+            )
+            sub = row.get("subtotal", computed_sub)
+            if sub > catalog:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"El importe acordado de {item.ad_space.code} no puede superar "
+                            f"el subtotal de catálogo (${catalog:,.2f})."
+                        )
+                    }
+                )
+            item.custom_rental_start_enabled = True
+            item.custom_rental_start_date = custom_date
+            item.first_month_agreed_subtotal = first_month
+            item.start_date = custom_date
+            item.original_subtotal = catalog
+            item.subtotal = sub
+            update_fields.extend(
+                [
+                    "custom_rental_start_enabled",
+                    "custom_rental_start_date",
+                    "first_month_agreed_subtotal",
+                    "start_date",
+                    "original_subtotal",
+                ]
+            )
+        elif rental_start_in_payload and not custom_enabled:
+            if item.custom_rental_start_enabled:
+                item.start_date = reservation_month_anchor(item.start_date)
+                item.custom_rental_start_enabled = False
+                item.custom_rental_start_date = None
+                item.first_month_agreed_subtotal = None
+                item.original_subtotal = line_subtotal_for_center(
+                    item.monthly_price,
+                    center,
+                    item.start_date,
+                    item.end_date,
+                )
+                update_fields.extend(
+                    [
+                        "custom_rental_start_enabled",
+                        "custom_rental_start_date",
+                        "first_month_agreed_subtotal",
+                        "start_date",
+                        "original_subtotal",
+                    ]
+                )
+            if "subtotal" not in row:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"Indica el subtotal acordado de {item.ad_space.code}."
+                        )
+                    }
+                )
+            sub = row["subtotal"]
+            orig = (
+                item.original_subtotal
+                if item.original_subtotal is not None
+                else item.subtotal
+            )
+            if sub > orig:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"El importe acordado de {item.ad_space.code} no puede superar "
+                            f"el subtotal de catálogo (${orig:,.2f})."
+                        )
+                    }
+                )
+            item.subtotal = sub
+        else:
+            if "subtotal" not in row:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"Indica el subtotal acordado de {item.ad_space.code}."
+                        )
+                    }
+                )
+            sub = row["subtotal"]
+            orig = (
+                item.original_subtotal
+                if item.original_subtotal is not None
+                else item.subtotal
+            )
+            if sub > orig:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"El importe acordado de {item.ad_space.code} no puede superar "
+                            f"el subtotal de catálogo (${orig:,.2f})."
+                        )
+                    }
+                )
+            item.subtotal = sub
+
+        item.save(update_fields=update_fields)
+        total += item.subtotal
 
     if seen != set(by_id.keys()):
         raise serializers.ValidationError(

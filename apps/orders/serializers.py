@@ -333,6 +333,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "original_subtotal",
             "subtotal",
             "discount_amount",
+            "custom_rental_start_enabled",
+            "custom_rental_start_date",
+            "first_month_agreed_subtotal",
         )
 
     def get_discount_amount(self, obj):
@@ -639,7 +642,18 @@ class OrderClientPaymentPatchSerializer(serializers.ModelSerializer):
 
 class OrderLinePricingItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"))
+    subtotal = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False
+    )
+    custom_rental_start_enabled = serializers.BooleanField(required=False)
+    custom_rental_start_date = serializers.DateField(required=False, allow_null=True)
+    first_month_agreed_subtotal = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        required=False,
+        allow_null=True,
+    )
 
 
 class OrderLinePricingUpdateSerializer(serializers.Serializer):
@@ -681,6 +695,20 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
         return validate_order_invoice_digital_file(value)
 
     def validate(self, attrs):
+        from apps.orders.utils.validators import order_admin_commercial_editable
+
+        if (
+            "invoice_digital" in attrs
+            and attrs["invoice_digital"] is not None
+            and not order_admin_commercial_editable(self.instance)
+        ):
+            raise serializers.ValidationError(
+                {
+                    "invoice_digital": (
+                        "Solo puedes adjuntar la factura digital después de aprobar la solicitud."
+                    )
+                }
+            )
         new_status = attrs.get("status", self.instance.status)
         if (
             new_status == OrderStatus.EXPIRED
@@ -1174,7 +1202,10 @@ class OrderItemWriteSerializer(serializers.Serializer):
                         "La fecha de inicio no puede ser hoy ni un día pasado. "
                         "Elige una fecha futura válida."
                         if unit == "calendar_day"
-                        else "No puedes reservar desde un mes pasado ni desde el mes en curso."
+                        else (
+                            "No puedes reservar desde un mes pasado. "
+                            "El mes en curso solo está disponible hasta el día 15."
+                        )
                     )
                 }
             )

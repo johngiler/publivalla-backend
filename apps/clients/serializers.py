@@ -1,13 +1,35 @@
 from rest_framework import serializers
 
-from apps.clients.models import Client, ClientStatus
+from django.contrib.auth import get_user_model
+
+from apps.clients.models import Client, ClientBrand, ClientStatus
+from apps.clients.utils.marketplace_user import validate_member_brand_ids
+from apps.users.models import UserProfile
 from apps.clients.validators import (
     normalize_client_representative_fields,
     normalize_client_rif_required,
 )
-from apps.users.models import UserProfile
 from apps.users.utils import is_platform_staff
 from apps.workspaces.tenant import get_workspace_for_request
+
+
+class ClientBrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClientBrand
+        fields = ("id", "name", "logo")
+        read_only_fields = ("id",)
+        extra_kwargs = {
+            "logo": {"required": False, "allow_null": True},
+            "name": {"required": True, "allow_blank": False},
+        }
+
+    def validate_name(self, value):
+        s = (value or "").strip()
+        if not s:
+            raise serializers.ValidationError("Indica el nombre de la marca.")
+        if len(s) > 255:
+            raise serializers.ValidationError("El nombre es demasiado largo.")
+        return s
 
 
 class ClientAdminSerializer(serializers.ModelSerializer):
@@ -17,6 +39,7 @@ class ClientAdminSerializer(serializers.ModelSerializer):
     linked_usernames = serializers.SerializerMethodField()
     orders_count = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
+    brands = ClientBrandSerializer(many=True, read_only=True)
 
     class Meta:
         model = Client
@@ -26,6 +49,7 @@ class ClientAdminSerializer(serializers.ModelSerializer):
             "linked_user_ids",
             "linked_usernames",
             "orders_count",
+            "brands",
             "company_name",
             "rif",
             "contact_name",
@@ -163,3 +187,85 @@ class MyCompanySerializer(serializers.ModelSerializer):
         prof.client = c
         prof.save(update_fields=["client"])
         return c
+
+
+User = get_user_model()
+
+
+class CompanyMemberSerializer(serializers.Serializer):
+    """Usuario cliente vinculado a la empresa (Mi empresa → Usuarios)."""
+
+    id = serializers.IntegerField(source="user.id", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    brands = serializers.SerializerMethodField()
+    is_self = serializers.SerializerMethodField()
+
+    def get_brands(self, obj: UserProfile):
+        links = getattr(obj, "brand_links", None)
+        if links is None:
+            return []
+        rows = []
+        for link in links.all():
+            brand = link.brand
+            if brand and brand.is_active:
+                rows.append(brand)
+        ser = ClientBrandSerializer(rows, many=True, context=self.context)
+        return ser.data
+
+    def get_is_self(self, obj: UserProfile) -> bool:
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.user_id == request.user.pk
+
+
+class CompanyMemberCreateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    brand_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate_email(self, value):
+        return (value or "").strip().lower()
+
+    def validate_brand_ids(self, value):
+        client = self.context.get("client")
+        if client is None:
+            return value or []
+        try:
+            return validate_member_brand_ids(client, value)
+        except Exception as exc:
+            from apps.clients.utils.marketplace_user import MarketplaceUserError
+
+            if isinstance(exc, MarketplaceUserError) and exc.code == "invalid_brands":
+                raise serializers.ValidationError(exc.message) from exc
+            raise
+
+
+class CompanyMemberUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    brand_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate_brand_ids(self, value):
+        profile = self.context.get("profile")
+        if profile is None or profile.client_id is None:
+            return value or []
+        try:
+            return validate_member_brand_ids(profile.client, value)
+        except Exception as exc:
+            from apps.clients.utils.marketplace_user import MarketplaceUserError
+
+            if isinstance(exc, MarketplaceUserError) and exc.code == "invalid_brands":
+                raise serializers.ValidationError(exc.message) from exc
+            raise

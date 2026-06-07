@@ -169,6 +169,9 @@ REST_FRAMEWORK = {
         "validate_password": "120/hour",
         "password_setup_intent": "60/hour",
         "set_initial_password": "30/hour",
+        "password_reset_request": "20/hour",
+        "password_reset_intent": "60/hour",
+        "password_reset_confirm": "30/hour",
     },
 }
 
