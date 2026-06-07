@@ -25,8 +25,10 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.utils import ImageReader
+
+from apps.orders.utils.order_pdf_builder import OrderPdfBuilder
 
 
 IVA_RATE = Decimal("0.16")
@@ -42,7 +44,7 @@ _STAMP_DRAW_MAX_H = 7.0 * cm
 _PARTY_SIG_NAME_ROW_H = 16
 _PARTY_SIG_LINE_ROW_H = 12
 
-# Márgenes 2cm + 2cm en SimpleDocTemplate de estos PDFs
+# Márgenes laterales 2cm (alineados con OrderPdfBuilder.LEFT/RIGHT_MARGIN)
 _INNER_W = A4[0] - 4 * cm
 
 
@@ -552,6 +554,27 @@ def _municipality_table_rows_for_item(order_item) -> list[dict]:
     return rows
 
 
+class NegotiationSheetPdfBuilder(OrderPdfBuilder):
+    DOCUMENT_TITLE = "Hoja de negociación"
+
+
+class MunicipalityAuthorizationPdfBuilder(OrderPdfBuilder):
+    DOCUMENT_TITLE = "Carta al municipio"
+
+
+class InvoicePdfBuilder(OrderPdfBuilder):
+    DOCUMENT_TITLE = "Nota de cobro"
+    TOP_MARGIN = 2.5 * cm
+
+
+class InstallationPermitRequestPdfBuilder(OrderPdfBuilder):
+    DOCUMENT_TITLE = "Solicitud permiso instalación"
+
+    def __init__(self, order, permit=None, **kwargs) -> None:
+        super().__init__(order, **kwargs)
+        self.permit = permit
+
+
 def build_negotiation_sheet_pdf_bytes(
     *,
     order,
@@ -624,19 +647,9 @@ def build_negotiation_sheet_pdf_bytes(
         obs_parts.append("\n".join(description_lines))
     obs = "\n\n".join(obs_parts) if obs_parts else codes
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2 * cm,
-        rightMargin=2 * cm,
-        topMargin=2.6 * cm,
-        bottomMargin=2 * cm,
-        title="Hoja de negociación",
-    )
     title_st, body_st, label_st, small_st = _styles()
     story = []
-    _prepend_order_logo(story, order)
+    NegotiationSheetPdfBuilder.prepend_branding_for(order, story)
     story.append(Paragraph("HOJA NEGOCIACION TOMAS PUBLICITARIAS", title_st))
     story.append(Spacer(1, 0.4 * cm))
 
@@ -742,10 +755,7 @@ def build_negotiation_sheet_pdf_bytes(
     )
     story.append(sig_table)
 
-    doc.build(story)
-    pdf = buf.getvalue()
-    buf.close()
-    return pdf
+    return NegotiationSheetPdfBuilder.render_story(order, story)
 
 
 def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
@@ -789,19 +799,9 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     start = min(it.start_date for it in items)
     end = max(it.end_date for it in items)
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2 * cm,
-        rightMargin=2 * cm,
-        topMargin=2.6 * cm,
-        bottomMargin=2 * cm,
-        title="Carta al municipio",
-    )
     title_st, body_st, label_st, small_st = _styles()
     story = []
-    _prepend_order_logo(story, order)
+    MunicipalityAuthorizationPdfBuilder.prepend_branding_for(order, story)
     story.append(Paragraph(f"{_escape(city)}, {date_str}", ParagraphStyle(
         "R", parent=body_st, alignment=TA_RIGHT)))
     story.append(Spacer(1, 0.8 * cm))
@@ -877,10 +877,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
             stamp_footer_rif=footer_rif,
         )
     )
-    doc.build(story)
-    pdf = buf.getvalue()
-    buf.close()
-    return pdf
+    return MunicipalityAuthorizationPdfBuilder.render_story(order, story)
 
 
 def build_invoice_pdf_bytes(*, order) -> bytes:
@@ -895,19 +892,9 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     grand = (total + iva).quantize(Decimal("0.01"))
     order_ref = (order.code or "").strip() or f"#{order.pk}"
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2 * cm,
-        rightMargin=2 * cm,
-        topMargin=2.5 * cm,
-        bottomMargin=2 * cm,
-        title="Nota de cobro",
-    )
     title_st, body_st, _, _ = _styles()
     story = []
-    _prepend_order_logo(story, order)
+    InvoicePdfBuilder.prepend_branding_for(order, story)
     story.append(Paragraph("NOTA DE COBRO", title_st))
     story.append(
         Paragraph(f"<b>Pedido:</b> {_escape(order_ref)}", body_st))
@@ -987,10 +974,7 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
         )
     )
     story.append(t)
-    doc.build(story)
-    pdf = buf.getvalue()
-    buf.close()
-    return pdf
+    return InvoicePdfBuilder.render_story(order, story)
 
 
 def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
@@ -1006,19 +990,9 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
     if not isinstance(staff, list):
         staff = []
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2 * cm,
-        rightMargin=2 * cm,
-        topMargin=2.6 * cm,
-        bottomMargin=2 * cm,
-        title="Solicitud permiso instalación",
-    )
     title_st, body_st, label_st, small_st = _styles()
     story = []
-    _prepend_order_logo(story, order)
+    InstallationPermitRequestPdfBuilder.prepend_branding_for(order, story, permit=permit)
     story.append(Paragraph("SOLICITUD DE PERMISO DE INSTALACIÓN", title_st))
     story.append(Spacer(1, 0.35 * cm))
     story.append(
@@ -1108,7 +1082,4 @@ def build_installation_permit_request_pdf_bytes(*, order, permit) -> bytes:
         )
     )
 
-    doc.build(story)
-    pdf = buf.getvalue()
-    buf.close()
-    return pdf
+    return InstallationPermitRequestPdfBuilder.render_story(order, story, permit=permit)
