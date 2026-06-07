@@ -299,7 +299,18 @@ def _apply_parsed_catalog(
 
     with transaction.atomic():
         c = parsed.center
-        defaults = {k: v for k, v in c.items() if k not in ("slug", "catalog_pdf_path", "code_prefix")}
+        defaults = {
+            k: v
+            for k, v in c.items()
+            if k
+            not in (
+                "slug",
+                "catalog_pdf_path",
+                "code_prefix",
+                "lessor_legal_name",
+                "lessor_rif",
+            )
+        }
         defaults.setdefault("country", "Venezuela")
         defaults.setdefault("is_active", True)
         center, created = ShoppingCenter.objects.update_or_create(

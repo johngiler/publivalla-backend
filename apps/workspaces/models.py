@@ -16,6 +16,8 @@ from apps.common.utils.media_layout import (
     workspace_brand_logo_mark_upload,
     workspace_brand_logo_png_artifacts_upload,
     workspace_brand_logo_upload,
+    workspace_brand_signature_png_upload,
+    workspace_brand_stamp_png_upload,
 )
 from apps.workspaces.validators import (
     validate_brand_graphic,
@@ -38,7 +40,13 @@ class Workspace(TimeStampedActiveModel):
     legal_name = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Razón social u organismo propietario (opcional).",
+        help_text="Razón social u organismo propietario (opcional). Se usa como arrendador en PDFs del pedido.",
+    )
+    rif = models.CharField(
+        "RIF",
+        max_length=32,
+        blank=True,
+        help_text="RIF fiscal del owner (opcional). Arrendador en documentos legales del pedido.",
     )
     logo = models.FileField(
         "Logo (logotipo completo)",
@@ -75,6 +83,24 @@ class Workspace(TimeStampedActiveModel):
         help_text="Solo PNG. Se usa en correos transaccionales y PDFs del pedido donde no aplica SVG. "
         "Opcional si ya subes mapas de bits en logotipo/isotipo; recomendado si solo usas SVG en marca. "
         "media/<slug>/workspaces/logo_png_artifacts/…",
+    )
+    signature_png = models.FileField(
+        "Firma (documentos PDF)",
+        upload_to=workspace_brand_signature_png_upload,
+        blank=True,
+        null=True,
+        validators=[validate_png_artifacts],
+        help_text="Solo PNG. Firma del arrendador en hoja de negociación y carta al municipio. "
+        "media/<slug>/workspaces/signatures/…",
+    )
+    stamp_png = models.FileField(
+        "Sello (documentos PDF)",
+        upload_to=workspace_brand_stamp_png_upload,
+        blank=True,
+        null=True,
+        validators=[validate_png_artifacts],
+        help_text="Solo PNG. Sello del arrendador en los mismos PDFs (junto a la firma cuando ambos están configurados). "
+        "media/<slug>/workspaces/stamps/…",
     )
     primary_color = models.CharField(
         "Color primario",

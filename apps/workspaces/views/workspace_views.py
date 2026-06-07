@@ -72,7 +72,8 @@ class MyWorkspaceView(APIView):
     """
     GET/PATCH del Workspace (owner) para el administrador marketplace del mismo tenant.
     El slug no se puede cambiar: rechazado si viene en el cuerpo.
-    Archivos: multipart con campos `logo`, `logo_mark`, `favicon`, `logo_png_artifacts` o `remove_*`.
+    Archivos: multipart con campos `logo`, `logo_mark`, `favicon`, `logo_png_artifacts`,
+    `signature_png`, `stamp_png` o `remove_*`.
     """
 
     permission_classes = [IsAuthenticated]
@@ -135,6 +136,20 @@ class MyWorkspaceView(APIView):
             if ws.logo_png_artifacts:
                 ws.logo_png_artifacts.delete(save=False)
             ws.logo_png_artifacts = None
+
+        if "signature_png" in request.FILES:
+            ws.signature_png = request.FILES["signature_png"]
+        if _truthy_form_value(request.data.get("remove_signature_png")):
+            if ws.signature_png:
+                ws.signature_png.delete(save=False)
+            ws.signature_png = None
+
+        if "stamp_png" in request.FILES:
+            ws.stamp_png = request.FILES["stamp_png"]
+        if _truthy_form_value(request.data.get("remove_stamp_png")):
+            if ws.stamp_png:
+                ws.stamp_png.delete(save=False)
+            ws.stamp_png = None
 
         ws.save()
         ws.refresh_from_db()

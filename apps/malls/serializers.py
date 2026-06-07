@@ -24,8 +24,6 @@ class ShoppingCenterSerializer(serializers.ModelSerializer):
             "description",
             "cover_image",
             "cover_image_url",
-            "lessor_legal_name",
-            "lessor_rif",
             "municipal_authority_line",
             "municipal_permit_notice",
             "advertising_regulations",

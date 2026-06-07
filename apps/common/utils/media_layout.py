@@ -67,6 +67,14 @@ def workspace_brand_logo_png_artifacts_upload(instance, filename: str) -> str:
     return _workspace_brand_file_upload(instance, filename, "logo_png_artifacts")
 
 
+def workspace_brand_signature_png_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "signatures")
+
+
+def workspace_brand_stamp_png_upload(instance, filename: str) -> str:
+    return _workspace_brand_file_upload(instance, filename, "stamps")
+
+
 def _workspace_from_shopping_center(instance) -> object | None:
     ws = getattr(instance, "workspace", None)
     if ws is None and getattr(instance, "workspace_id", None):

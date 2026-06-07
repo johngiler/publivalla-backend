@@ -34,18 +34,6 @@ class ShoppingCenter(TimeStampedActiveModel):
         null=True,
         help_text="Portada del centro: media/<slug>/centers/covers/AÑO/MES/ (histórico: centers/covers/…).",
     )
-    lessor_legal_name = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Razón social del arrendador (Constructora Acme, C.A., etc.).",
-    )
-    lessor_rif = models.CharField(
-        max_length=32,
-        blank=True,
-        default="",
-        help_text="RIF del arrendador en documentos legales.",
-    )
     municipal_authority_line = models.CharField(
         max_length=255,
         blank=True,

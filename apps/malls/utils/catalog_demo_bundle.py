@@ -67,8 +67,6 @@ def build_demo_catalog_bundle(
             f"Centro comercial de demostración para {brand}. "
             "Los datos son ficticios hasta recibir el catálogo oficial en PDF."
         ),
-        "lessor_legal_name": f"{brand} Arrendadora Demo, C.A.",
-        "lessor_rif": "J-00000000-0",
         "municipal_authority_line": f"Sres. Alcaldía — permiso demo ({city})",
         "municipal_permit_notice": (
             "Datos de demostración: el anunciante debe gestionar el permiso municipal "

@@ -7,10 +7,10 @@ from apps.workspaces.models import Workspace
 class WorkspaceAdmin(admin.ModelAdmin):
     list_display = ("slug", "name", "is_active", "created_at")
     list_filter = ("is_active",)
-    search_fields = ("slug", "name", "legal_name")
+    search_fields = ("slug", "name", "legal_name", "rif")
     prepopulated_fields = {"slug": ("name",)}
     fieldsets = (
-        (None, {"fields": ("slug", "name", "legal_name", "is_active")}),
+        (None, {"fields": ("slug", "name", "legal_name", "rif", "is_active")}),
         (
             "Marca visual",
             {
@@ -19,6 +19,8 @@ class WorkspaceAdmin(admin.ModelAdmin):
                     "logo",
                     "logo_mark",
                     "logo_png_artifacts",
+                    "signature_png",
+                    "stamp_png",
                     "favicon",
                     "primary_color",
                     "secondary_color",

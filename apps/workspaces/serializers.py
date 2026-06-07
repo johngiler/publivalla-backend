@@ -84,11 +84,14 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
     """
 
     logo_png_artifacts_url = serializers.SerializerMethodField()
+    signature_png_url = serializers.SerializerMethodField()
+    stamp_png_url = serializers.SerializerMethodField()
     transactional_email_password_set = serializers.SerializerMethodField()
     transactional_email_api_key_set = serializers.SerializerMethodField()
 
     class Meta(WorkspacePublicSerializer.Meta):
         fields = WorkspacePublicSerializer.Meta.fields + (
+            "rif",
             "can_create_shopping_centers",
             "can_create_ad_spaces",
             "can_create_marketplace_admin_users",
@@ -106,10 +109,18 @@ class WorkspaceMeReadSerializer(WorkspacePublicSerializer):
             "transactional_email_mailgun_domain",
             "transactional_email_mailgun_region",
             "logo_png_artifacts_url",
+            "signature_png_url",
+            "stamp_png_url",
         )
 
     def get_logo_png_artifacts_url(self, obj):
         return self._absolute_media(obj, "logo_png_artifacts")
+
+    def get_signature_png_url(self, obj):
+        return self._absolute_media(obj, "signature_png")
+
+    def get_stamp_png_url(self, obj):
+        return self._absolute_media(obj, "stamp_png")
 
     def get_transactional_email_password_set(self, obj):
         return bool((getattr(obj, "transactional_email_password", None) or "").strip())
@@ -126,6 +137,7 @@ class WorkspaceMeUpdateSerializer(serializers.ModelSerializer):
         fields = (
             "name",
             "legal_name",
+            "rif",
             "primary_color",
             "secondary_color",
             "support_email",

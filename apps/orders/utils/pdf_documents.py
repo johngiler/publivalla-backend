@@ -25,11 +25,22 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib.utils import ImageReader
 
 
 IVA_RATE = Decimal("0.16")
+
+# Bloque firma arrendador / inquilino (hoja de negociación): altura de maquetación fija;
+# la imagen se dibuja más grande y puede solapar nombre y línea sin separarlas.
+_PARTY_SIG_COL_W = 7.8 * cm
+_SIG_ZONE_LAYOUT_H = 0.35 * cm
+_SIG_DRAW_MAX_W = 14.8 * cm
+_SIG_DRAW_MAX_H = 5.6 * cm
+_STAMP_DRAW_MAX_W = 7.0 * cm
+_STAMP_DRAW_MAX_H = 7.0 * cm
+_PARTY_SIG_NAME_ROW_H = 16
+_PARTY_SIG_LINE_ROW_H = 12
 
 # Márgenes 2cm + 2cm en SimpleDocTemplate de estos PDFs
 _INNER_W = A4[0] - 4 * cm
@@ -176,50 +187,328 @@ def _escape(s: str) -> str:
     )
 
 
+def _read_workspace_png_bytes(ws, field_name: str) -> bytes | None:
+    """Lee bytes de un FileField PNG del workspace (Mi negocio)."""
+    if ws is None:
+        return None
+    f = getattr(ws, field_name, None)
+    if not f or not getattr(f, "name", None):
+        return None
+    if Path(str(f.name)).suffix.lower() != ".png":
+        return None
+    try:
+        f.open("rb")
+        try:
+            data = f.read()
+        finally:
+            f.close()
+        return data or None
+    except Exception:
+        return None
+
+
+def _order_workspace(order):
+    client = order.client
+    ws = getattr(client, "workspace", None)
+    if ws is None and getattr(client, "workspace_id", None):
+        from apps.workspaces.models import Workspace
+
+        ws = Workspace.objects.filter(pk=client.workspace_id).first()
+    return ws
+
+
+def _workspace_lessor_identity(order) -> tuple[str, str]:
+    """
+    Arrendador en documentos del pedido: el owner (workspace) del cliente.
+    Razón social → nombre comercial → «Arrendador»; RIF del workspace si existe.
+    """
+    ws = _order_workspace(order)
+    if ws is None:
+        return "Arrendador", "—"
+    name = (ws.legal_name or "").strip() or (ws.name or "").strip() or "Arrendador"
+    rif = (getattr(ws, "rif", None) or "").strip() or "—"
+    return name, rif
+
+
+def _workspace_legal_stamp_footer(ws) -> tuple[str, str]:
+    """Razón social y RIF del owner para el pie bajo la línea cuando no hay sello PNG."""
+    if ws is None:
+        return "", ""
+    legal = (ws.legal_name or "").strip()
+    rif = (getattr(ws, "rif", None) or "").strip()
+    return legal, rif
+
+
+def _lessor_stamp_footer_rows(
+    legal_name: str,
+    rif: str,
+    body_st,
+    *,
+    centered: bool = False,
+) -> list:
+    """Bloque de texto (razón social + RIF) en la zona del sello."""
+    if not legal_name and not rif:
+        return []
+    footer_st = ParagraphStyle(
+        "LessorStampFooter",
+        parent=body_st,
+        fontSize=8,
+        leading=10,
+        alignment=TA_CENTER if centered else TA_LEFT,
+    )
+    lines: list[str] = []
+    if legal_name:
+        lines.append(_escape(legal_name))
+    if rif:
+        lines.append(f"RIF {_escape(rif)}")
+    return [
+        Spacer(1, 0.1 * cm),
+        Paragraph("<br/>".join(lines), footer_st),
+    ]
+
+
+def _lessor_pdf_assets(order) -> tuple[bytes | None, bytes | None]:
+    """
+    Firma y sello del arrendador (workspace).
+    Sin firma no se insertan imágenes (el sello solo se usa si hay firma).
+    """
+    ws = _order_workspace(order)
+    signature = _read_workspace_png_bytes(ws, "signature_png")
+    if not signature:
+        return None, None
+    stamp = _read_workspace_png_bytes(ws, "stamp_png")
+    return signature, stamp
+
+
+class SignatureOverlayFlowable(Flowable):
+    """
+    Reserva una franja de altura fija entre nombre y línea.
+    La firma se escala grande y se dibuja centrada en esa franja, solapando texto y línea.
+    """
+
+    def __init__(
+        self,
+        png_bytes: bytes | None,
+        *,
+        width: float,
+        zone_height: float,
+        max_draw_w: float,
+        max_draw_h: float,
+        h_align: str = "LEFT",
+    ):
+        super().__init__()
+        self.png_bytes = png_bytes
+        self.width = width
+        self.zone_height = zone_height
+        self.max_draw_w = max_draw_w
+        self.max_draw_h = max_draw_h
+        self.h_align = h_align
+
+    def wrap(self, availWidth, availHeight):
+        return self.width, self.zone_height
+
+    def draw(self):
+        if not self.png_bytes:
+            return
+        try:
+            reader = ImageReader(BytesIO(self.png_bytes))
+            iw, ih = reader.getSize()
+            scale = min(
+                self.max_draw_w / max(float(iw), 1.0),
+                self.max_draw_h / max(float(ih), 1.0),
+            )
+            dw = float(iw) * scale
+            dh = float(ih) * scale
+            if self.h_align == "CENTER":
+                x = (self.width - dw) / 2.0
+            else:
+                x = 0.0
+            y = (self.zone_height - dh) / 2.0
+            self.canv.drawImage(reader, x, y, width=dw, height=dh, mask="auto")
+        except Exception:
+            return
+
+
+def _make_scaled_png_image(
+    png_bytes: bytes,
+    *,
+    max_w: float,
+    max_h: float,
+    h_align: str = "LEFT",
+) -> Image | None:
+    try:
+        reader = ImageReader(BytesIO(png_bytes))
+        iw, ih = reader.getSize()
+        scale = min(
+            max_w / max(float(iw), 1.0),
+            max_h / max(float(ih), 1.0),
+        )
+        img = Image(
+            BytesIO(png_bytes),
+            width=float(iw) * scale,
+            height=float(ih) * scale,
+        )
+        img.hAlign = h_align
+        return img
+    except Exception:
+        return None
+
+
 def _party_signature_cell(
     name: str,
     body_st,
     *,
     signature_png: bytes | None = None,
+    stamp_png: bytes | None = None,
+    stamp_footer_legal_name: str = "",
+    stamp_footer_rif: str = "",
 ) -> Table:
-    """Bloque nombre + línea o imagen de firma (columna arrendador / inquilino)."""
-    rows: list[list] = [[Paragraph(f"<b>{_escape(name)}</b>", body_st)]]
-    if signature_png:
-        try:
-            reader = ImageReader(BytesIO(signature_png))
-            iw, ih = reader.getSize()
-            max_w = 7.0 * cm
-            max_h = 1.4 * cm
-            scale = min(
-                max_w / max(float(iw), 1.0),
-                max_h / max(float(ih), 1.0),
-            )
-            img = Image(
-                BytesIO(signature_png),
-                width=float(iw) * scale,
-                height=float(ih) * scale,
-            )
-            img.hAlign = "LEFT"
-            rows.append([Spacer(1, 0.15 * cm)])
-            rows.append([img])
-        except Exception:
-            rows.append([Spacer(1, 0.6 * cm)])
-    else:
-        rows.append([Spacer(1, 0.6 * cm)])
-    rows.append([Paragraph("_________________________", body_st)])
-    inner = Table(rows, colWidths=[8.0 * cm])
-    inner.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
+    """Bloque nombre + firma superpuesta + línea (columna arrendador / inquilino)."""
+    line_st = ParagraphStyle(
+        "PartySigLine",
+        parent=body_st,
+        fontSize=9,
+        leading=_PARTY_SIG_LINE_ROW_H,
     )
+    rows: list[list] = [
+        [Paragraph(f"<b>{_escape(name)}</b>", body_st)],
+        [
+            SignatureOverlayFlowable(
+                signature_png,
+                width=_PARTY_SIG_COL_W,
+                zone_height=_SIG_ZONE_LAYOUT_H,
+                max_draw_w=_SIG_DRAW_MAX_W,
+                max_draw_h=_SIG_DRAW_MAX_H,
+                h_align="LEFT",
+            )
+        ],
+        [Paragraph("_________________________", line_st)],
+    ]
+    style_cmds: list = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("ROWHEIGHT", (0, 0), (0, 0), _PARTY_SIG_NAME_ROW_H),
+        ("ROWHEIGHT", (0, 1), (0, 1), _SIG_ZONE_LAYOUT_H),
+        ("ROWHEIGHT", (0, 2), (0, 2), _PARTY_SIG_LINE_ROW_H),
+    ]
+    stamp_rendered = False
+    if stamp_png:
+        stamp = _make_scaled_png_image(
+            stamp_png,
+            max_w=_STAMP_DRAW_MAX_W,
+            max_h=_STAMP_DRAW_MAX_H,
+            h_align="LEFT",
+        )
+        if stamp:
+            rows.append([stamp])
+            stamp_row = len(rows) - 1
+            style_cmds.append(("TOPPADDING", (0, stamp_row), (0, stamp_row), 6))
+            stamp_rendered = True
+    if not stamp_rendered:
+        for footer_item in _lessor_stamp_footer_rows(
+            stamp_footer_legal_name,
+            stamp_footer_rif,
+            body_st,
+        ):
+            if isinstance(footer_item, Spacer):
+                rows.append([footer_item])
+            else:
+                rows.append([footer_item])
+                footer_row = len(rows) - 1
+                style_cmds.append(("TOPPADDING", (0, footer_row), (0, footer_row), 6))
+    inner = Table(rows, colWidths=[_PARTY_SIG_COL_W])
+    inner.setStyle(TableStyle(style_cmds))
     return inner
+
+
+def _municipality_lessor_signature_block(
+    *,
+    lessor: str,
+    body_st,
+    signature_png: bytes | None = None,
+    stamp_png: bytes | None = None,
+    stamp_footer_legal_name: str = "",
+    stamp_footer_rif: str = "",
+) -> list:
+    """Cierre centrado de la carta al municipio (texto + firma/sello opcionales)."""
+    sig_st = ParagraphStyle(
+        "MunSig",
+        parent=body_st,
+        alignment=TA_CENTER,
+        fontSize=9,
+    )
+    mun_sig_w = 10 * cm
+    flow: list = []
+    if signature_png:
+        mun_sig = Table(
+            [
+                [
+                    SignatureOverlayFlowable(
+                        signature_png,
+                        width=mun_sig_w,
+                        zone_height=_SIG_ZONE_LAYOUT_H,
+                        max_draw_w=17 * cm,
+                        max_draw_h=_SIG_DRAW_MAX_H,
+                        h_align="CENTER",
+                    )
+                ],
+                [
+                    Paragraph(
+                        f"<b>Gerencia de Mercadeo</b><br/>{_escape(lessor)}",
+                        sig_st,
+                    )
+                ],
+            ],
+            colWidths=[mun_sig_w],
+        )
+        mun_sig.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("ROWHEIGHT", (0, 0), (0, 0), _SIG_ZONE_LAYOUT_H),
+                    ("TOPPADDING", (0, 1), (0, 1), -4),
+                ]
+            )
+        )
+        mun_sig.hAlign = "CENTER"
+        flow.append(mun_sig)
+    else:
+        flow.append(
+            Paragraph(
+                f"<b>Gerencia de Mercadeo</b><br/>{_escape(lessor)}",
+                sig_st,
+            )
+        )
+    stamp_rendered = False
+    if stamp_png:
+        stamp = _make_scaled_png_image(
+            stamp_png,
+            max_w=_STAMP_DRAW_MAX_W,
+            max_h=_STAMP_DRAW_MAX_H,
+            h_align="CENTER",
+        )
+        if stamp:
+            flow.append(Spacer(1, 0.15 * cm))
+            flow.append(stamp)
+            stamp_rendered = True
+    if not stamp_rendered:
+        flow.extend(
+            _lessor_stamp_footer_rows(
+                stamp_footer_legal_name,
+                stamp_footer_rif,
+                body_st,
+                centered=True,
+            )
+        )
+    return flow
 
 
 def _order_items_for_pdf(order):
@@ -274,8 +563,7 @@ def build_negotiation_sheet_pdf_bytes(
     if not items:
         raise ValueError("El pedido no tiene líneas.")
     sc = items[0].ad_space.shopping_center
-    lessor = (sc.lessor_legal_name or "").strip() or "Arrendador"
-    lessor_rif = (sc.lessor_rif or "").strip() or "—"
+    lessor, lessor_rif = _workspace_lessor_identity(order)
     center_name = sc.name
     tenant = client.company_name
     rif = (client.rif or "").strip() or "—"
@@ -344,7 +632,7 @@ def build_negotiation_sheet_pdf_bytes(
         rightMargin=2 * cm,
         topMargin=2.6 * cm,
         bottomMargin=2 * cm,
-        title="Hoja negociación",
+        title="Hoja de negociación",
     )
     title_st, body_st, label_st, small_st = _styles()
     story = []
@@ -417,22 +705,42 @@ def build_negotiation_sheet_pdf_bytes(
             small_st,
         )
     )
-    story.append(Spacer(1, 1.2 * cm))
-    story.append(
-        Table(
+    story.append(Spacer(1, 2.0 * cm))
+    lessor_signature, lessor_stamp = _lessor_pdf_assets(order)
+    ws = _order_workspace(order)
+    footer_legal, footer_rif = _workspace_legal_stamp_footer(ws)
+    sig_table = Table(
+        [
             [
-                [
-                    _party_signature_cell(lessor, body_st),
-                    _party_signature_cell(
-                        tenant,
-                        body_st,
-                        signature_png=tenant_signature_png,
-                    ),
-                ]
-            ],
-            colWidths=[8.5 * cm, 8.5 * cm],
+                _party_signature_cell(
+                    lessor,
+                    body_st,
+                    signature_png=lessor_signature,
+                    stamp_png=lessor_stamp,
+                    stamp_footer_legal_name=footer_legal,
+                    stamp_footer_rif=footer_rif,
+                ),
+                _party_signature_cell(
+                    tenant,
+                    body_st,
+                    signature_png=tenant_signature_png,
+                ),
+            ]
+        ],
+        colWidths=[8.5 * cm, 8.5 * cm],
+    )
+    sig_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
         )
     )
+    story.append(sig_table)
 
     doc.build(story)
     pdf = buf.getvalue()
@@ -489,6 +797,7 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
         rightMargin=2 * cm,
         topMargin=2.6 * cm,
         bottomMargin=2 * cm,
+        title="Carta al municipio",
     )
     title_st, body_st, label_st, small_st = _styles()
     story = []
@@ -554,13 +863,18 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     story.append(Paragraph("Quedo de usted, muy atentamente.",
                  ParagraphStyle("C", parent=body_st, alignment=TA_CENTER)))
     story.append(Spacer(1, 1.2 * cm))
-    lessor = (sc.lessor_legal_name or "").strip() or "Arrendador"
-    lessor_rif = (sc.lessor_rif or "").strip() or "—"
-    story.append(
-        Paragraph(
-            f"<b>Gerencia de Mercadeo</b><br/>{_escape(lessor)}<br/>RIF {_escape(lessor_rif)}",
-            ParagraphStyle("sig", parent=body_st,
-                           alignment=TA_CENTER, fontSize=9),
+    lessor, _ = _workspace_lessor_identity(order)
+    lessor_signature, lessor_stamp = _lessor_pdf_assets(order)
+    ws = _order_workspace(order)
+    footer_legal, footer_rif = _workspace_legal_stamp_footer(ws)
+    story.extend(
+        _municipality_lessor_signature_block(
+            lessor=lessor,
+            body_st=body_st,
+            signature_png=lessor_signature,
+            stamp_png=lessor_stamp,
+            stamp_footer_legal_name=footer_legal,
+            stamp_footer_rif=footer_rif,
         )
     )
     doc.build(story)
@@ -582,8 +896,15 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     order_ref = (order.code or "").strip() or f"#{order.pk}"
 
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm,
-                            rightMargin=2 * cm, topMargin=2.5 * cm, bottomMargin=2 * cm)
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=2 * cm,
+        rightMargin=2 * cm,
+        topMargin=2.5 * cm,
+        bottomMargin=2 * cm,
+        title="Nota de cobro",
+    )
     title_st, body_st, _, _ = _styles()
     story = []
     _prepend_order_logo(story, order)

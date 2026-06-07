@@ -501,8 +501,6 @@ def _normalize_center(center_name: str, ctx: CatalogPdfParseContext) -> dict:
         "address": "",
         "country": "Venezuela",
         "description": auto_desc,
-        "lessor_legal_name": "",
-        "lessor_rif": "",
         "municipal_authority_line": "",
         "municipal_permit_notice": "",
         "advertising_regulations": "",
