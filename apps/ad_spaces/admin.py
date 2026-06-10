@@ -11,8 +11,8 @@ class AdSpaceFormatInline(admin.TabularInline):
 
 @admin.register(AdSpace)
 class AdSpaceAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "shopping_center", "monthly_price_usd", "status")
-    list_filter = ("shopping_center", "status")
+    list_display = ("code", "name", "shopping_center", "monthly_price_usd", "availability", "is_active")
+    list_filter = ("shopping_center", "availability", "is_active")
     inlines = [AdSpaceFormatInline]
 
 

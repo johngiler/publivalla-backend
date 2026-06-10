@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.ad_spaces.models import AdSpace, AdSpaceFormat, AdSpaceStatus
+from apps.ad_spaces.models import AdSpace, AdSpaceFormat, AdSpaceAvailability
 from apps.ad_spaces.utils.nomenclature import validate_toma_code
 
 
@@ -37,7 +37,7 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
     shopping_center_city = serializers.CharField(
         source="shopping_center.city", read_only=True, allow_blank=True
     )
-    status_label = serializers.SerializerMethodField()
+    availability_label = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField(read_only=True)
     formats = AdSpaceFormatSerializer(many=True, read_only=True)
     location_image_url = serializers.SerializerMethodField(read_only=True)
@@ -58,8 +58,8 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "monthly_price_usd",
-            "status",
-            "status_label",
+            "availability",
+            "availability_label",
             "cover_image",
             "location_image",
             "production_image",
@@ -83,15 +83,15 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
         if getattr(self, "instance", None) is not None:
             self.fields["code"].read_only = True
 
-    def validate_status(self, value):
+    def validate_availability(self, value):
         if value == "reserved":
             raise serializers.ValidationError(
-                "El estado «Reservado» ya no aplica a espacios publicitarios. "
+                "La disponibilidad «Reservado» ya no aplica a espacios publicitarios. "
                 "Usa Disponible, Ocupado o Bloqueado."
             )
-        allowed = {c.value for c in AdSpaceStatus}
+        allowed = {c.value for c in AdSpaceAvailability}
         if value not in allowed:
-            raise serializers.ValidationError("Estado no válido.")
+            raise serializers.ValidationError("Disponibilidad no válida.")
         return value
 
     def validate(self, attrs):
@@ -107,8 +107,8 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
                     ) from exc
         return attrs
 
-    def get_status_label(self, obj):
-        return obj.get_status_display()
+    def get_availability_label(self, obj):
+        return obj.get_availability_display()
 
     def _absolute_media(self, f) -> str | None:
         if not f:

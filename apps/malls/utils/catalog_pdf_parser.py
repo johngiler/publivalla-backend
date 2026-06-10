@@ -678,7 +678,7 @@ def _parse_toma_chunk(chunk: str, *, code_prefix: str) -> dict | None:
         "location_description": ubicacion,
         "level": level,
         "monthly_price_usd": str(canon) if canon is not None else None,
-        "status": "available",
+        "availability": "available",
         "venue_zone": "",
         "double_sided": bool(double_sided),
         "production_specs": production_specs,

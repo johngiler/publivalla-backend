@@ -148,7 +148,7 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
                 {
                     "detail": (
                         f"La toma {item.ad_space.code} no admite enviar la solicitud "
-                        f"(estado: {item.ad_space.get_status_display()}). "
+                        f"(disponibilidad: {item.ad_space.get_availability_display()}). "
                         "Quítala del carrito o elige otra toma."
                     ),
                 }

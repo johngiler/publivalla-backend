@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from apps.ad_spaces.models import AdSpaceStatus
+from apps.ad_spaces.models import AdSpaceAvailability
 from apps.availability.models import AvailabilityBlock, AvailabilityBlockType
 from apps.orders.models import OrderItem, OrderStatus
 
@@ -75,7 +75,7 @@ def ad_space_allows_marketplace_reservation(ad_space) -> bool:
     Admite nuevas líneas si no está bloqueada manualmente y queda al menos
     un mes futuro libre en el calendario (aunque el estado guardado sea reservado/ocupado).
     """
-    if getattr(ad_space, "status", None) == AdSpaceStatus.BLOCKED:
+    if getattr(ad_space, "availability", None) == AdSpaceAvailability.BLOCKED:
         return False
     from apps.ad_spaces.utils.marketplace_availability import ad_space_has_selectable_future_month
 

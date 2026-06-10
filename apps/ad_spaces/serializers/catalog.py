@@ -47,7 +47,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     client_months_reserved_by_year = serializers.SerializerMethodField(read_only=True)
     client_months_active_by_year = serializers.SerializerMethodField(read_only=True)
     availability_blocked_ranges = serializers.SerializerMethodField(read_only=True)
-    status_label = serializers.SerializerMethodField()
+    availability_label = serializers.SerializerMethodField()
     marketplace_reservable = serializers.SerializerMethodField(read_only=True)
     name = serializers.CharField(read_only=True)
     title = serializers.CharField(source="name", read_only=True)
@@ -114,8 +114,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "location_description",
             "level",
             "monthly_price_usd",
-            "status",
-            "status_label",
+            "availability",
+            "availability_label",
             "marketplace_reservable",
             "cover_image",
             "location_image",
@@ -133,7 +133,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "high_season_multiplier",
             "rental_billing_unit",
         )
-        read_only_fields = ("status",)
+        read_only_fields = ("availability",)
 
     def _primary(self, obj):
         return ad_space_primary_format(obj)
@@ -246,8 +246,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             for start, end in active_availability_block_ranges(obj.pk)
         ]
 
-    def get_status_label(self, obj):
-        return obj.get_status_display()
+    def get_availability_label(self, obj):
+        return obj.get_availability_display()
 
     def to_representation(self, instance):
         from apps.ad_spaces.utils.marketplace_availability import (
@@ -255,7 +255,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         )
 
         sync_ad_space_commercial_status(instance.pk)
-        instance.refresh_from_db(fields=["status"])
+        instance.refresh_from_db(fields=["availability"])
         return super().to_representation(instance)
 
     def get_marketplace_reservable(self, obj):

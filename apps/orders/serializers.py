@@ -1214,7 +1214,7 @@ class OrderItemWriteSerializer(serializers.Serializer):
                 {
                     "ad_space": (
                         f"La toma {ad.code} no admite nuevas reservas "
-                        f"(estado: {ad.get_status_display()})."
+                        f"(disponibilidad: {ad.get_availability_display()})."
                     )
                 }
             )

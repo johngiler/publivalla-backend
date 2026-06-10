@@ -27,7 +27,7 @@ class AdSpaceType(models.TextChoices):
     PENDON_COLUMNA = "pendon_columna", "Pendón de columna"
 
 
-class AdSpaceStatus(models.TextChoices):
+class AdSpaceAvailability(models.TextChoices):
     AVAILABLE = "available", "Disponible"
     OCCUPIED = "occupied", "Ocupado"
     BLOCKED = "blocked", "Bloqueado"
@@ -72,10 +72,11 @@ class AdSpace(TimeStampedActiveModel):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     monthly_price_usd = models.DecimalField(max_digits=12, decimal_places=2)
-    status = models.CharField(
+    availability = models.CharField(
         max_length=20,
-        choices=AdSpaceStatus.choices,
-        default=AdSpaceStatus.AVAILABLE,
+        choices=AdSpaceAvailability.choices,
+        default=AdSpaceAvailability.AVAILABLE,
+        help_text="Disponibilidad comercial (disponible, ocupado o bloqueado manualmente).",
     )
     cover_image = models.ImageField(
         upload_to=ad_space_cover_upload,

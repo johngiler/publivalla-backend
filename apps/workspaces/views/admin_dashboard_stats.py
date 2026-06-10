@@ -34,7 +34,7 @@ _EMPTY = {
         "max_monthly_price_usd_per_space": None,
     },
     "orders_by_status": [],
-    "spaces_by_status": [],
+    "spaces_by_availability": [],
     "orders_by_day": [],
     "top_centers_by_spaces": [],
     "metrics": _empty_metrics(),
@@ -78,9 +78,9 @@ class AdminDashboardStatsView(APIView):
         min_monthly_price_usd_per_space = _fnum(price_agg.get("min"))
         max_monthly_price_usd_per_space = _fnum(price_agg.get("max"))
 
-        spaces_by_status = [
-            {"status": row["status"], "count": row["c"]}
-            for row in spaces_qs.values("status").annotate(c=Count("id")).order_by("-c")
+        spaces_by_availability = [
+            {"availability": row["availability"], "count": row["c"]}
+            for row in spaces_qs.values("availability").annotate(c=Count("id")).order_by("-c")
         ]
 
         clients_qs = Client.objects.filter(workspace=ws)
@@ -154,7 +154,7 @@ class AdminDashboardStatsView(APIView):
                     "max_monthly_price_usd_per_space": max_monthly_price_usd_per_space,
                 },
                 "orders_by_status": orders_by_status,
-                "spaces_by_status": spaces_by_status,
+                "spaces_by_availability": spaces_by_availability,
                 "orders_by_day": orders_by_day,
                 "top_centers_by_spaces": top_centers_by_spaces,
                 "metrics": extended,

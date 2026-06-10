@@ -112,7 +112,7 @@ def build_demo_catalog_bundle(
                     f"Medidas {w} × {h} m. Ubicación: {zone}, nivel {1 + (i % 3)}."
                 ),
                 "monthly_price_usd": str(canon),
-                "status": "available",
+                "availability": "available",
                 "formats": [
                     {
                         "product_type_name": type_labels.get(type_slug, type_slug.replace("_", " ").title()),

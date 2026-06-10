@@ -188,7 +188,7 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
                     "ok": False,
                     "detail": (
                         "Esta toma no admite nuevas reservas en el marketplace "
-                        f"(estado: {space.get_status_display()})."
+                        f"(disponibilidad: {space.get_availability_display()})."
                     ),
                 },
                 status=200,

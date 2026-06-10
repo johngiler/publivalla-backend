@@ -31,7 +31,7 @@ from apps.ad_spaces.utils.format_sync import (
     sync_ad_space_formats_from_rows,
 )
 from apps.ad_spaces.utils.gallery import sync_cover_from_gallery
-from apps.ad_spaces.models import AdSpace, AdSpaceImage, AdSpaceStatus
+from apps.ad_spaces.models import AdSpace, AdSpaceAvailability, AdSpaceImage
 from apps.malls.utils.catalog_demo_bundle import build_demo_catalog_bundle
 from apps.malls.utils.catalog_seed_images import collect_images_for_code, load_images_map
 from apps.malls.utils.catalog_pdf_parser import (
@@ -354,7 +354,10 @@ def _apply_parsed_catalog(
             ):
                 defaults.pop(legacy_key, None)
             defaults["shopping_center"] = center
-            defaults["status"] = AdSpaceStatus.AVAILABLE
+            defaults.pop("status", None)
+            defaults["availability"] = (
+                defaults.pop("availability", None) or AdSpaceAvailability.AVAILABLE
+            )
             defaults["is_active"] = True
             if "monthly_price_usd" in defaults:
                 defaults["monthly_price_usd"] = _dec(defaults["monthly_price_usd"])

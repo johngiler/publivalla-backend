@@ -63,9 +63,14 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
         if ws is not None:
             qs = qs.filter(shopping_center__workspace=ws)
         if self.action == "list":
-            st = self.request.query_params.get("status")
-            if st and st != "all":
-                qs = qs.filter(status=st)
+            availability = self.request.query_params.get("availability", "").strip()
+            if availability and availability != "all":
+                qs = qs.filter(availability=availability)
+            active = self.request.query_params.get("active", "all")
+            if active == "active":
+                qs = qs.filter(is_active=True)
+            elif active == "inactive":
+                qs = qs.filter(is_active=False)
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(

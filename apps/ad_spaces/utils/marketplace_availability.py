@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from apps.ad_spaces.models import AdSpace, AdSpaceStatus
+from apps.ad_spaces.models import AdSpace, AdSpaceAvailability
 from apps.ad_spaces.utils.availability_calendar import (
     availability_calendar_years,
     calendar_ref_date,
@@ -66,15 +66,17 @@ def sync_ad_space_commercial_status(
 
     ref = ref if ref is not None else calendar_ref_date()
 
-    if ad_space.status == AdSpaceStatus.BLOCKED and not force_calendar:
-        return ad_space.status
+    if ad_space.availability == AdSpaceAvailability.BLOCKED and not force_calendar:
+        return ad_space.availability
 
     has_months = ad_space_has_selectable_future_month(ad_space.pk, ref=ref)
-    new_status = AdSpaceStatus.AVAILABLE if has_months else AdSpaceStatus.OCCUPIED
-    if ad_space.status != new_status:
-        AdSpace.objects.filter(pk=ad_space.pk).update(status=new_status)
-        ad_space.status = new_status
-    return new_status
+    new_availability = (
+        AdSpaceAvailability.AVAILABLE if has_months else AdSpaceAvailability.OCCUPIED
+    )
+    if ad_space.availability != new_availability:
+        AdSpace.objects.filter(pk=ad_space.pk).update(availability=new_availability)
+        ad_space.availability = new_availability
+    return new_availability
 
 
 def sync_ad_spaces_for_order(order) -> list[int]:
@@ -89,11 +91,15 @@ def sync_ad_spaces_for_order(order) -> list[int]:
     updated: list[int] = []
     for ad_space_id in ids:
         prev = (
-            AdSpace.objects.filter(pk=ad_space_id).values_list("status", flat=True).first()
+            AdSpace.objects.filter(pk=ad_space_id)
+            .values_list("availability", flat=True)
+            .first()
         )
         sync_ad_space_commercial_status(ad_space_id)
         curr = (
-            AdSpace.objects.filter(pk=ad_space_id).values_list("status", flat=True).first()
+            AdSpace.objects.filter(pk=ad_space_id)
+            .values_list("availability", flat=True)
+            .first()
         )
         if prev != curr:
             updated.append(ad_space_id)
