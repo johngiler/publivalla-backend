@@ -17,7 +17,14 @@ from rest_framework.response import Response
 from apps.ad_spaces.models import AdSpaceImage
 from apps.providers.models import MountingProvider
 from apps.providers.serializers import MountingProviderSerializer
-from apps.orders.models import Order, OrderArtAttachment, OrderInstallationPermit, OrderItem, OrderStatus
+from apps.orders.models import (
+    Order,
+    OrderArtAttachment,
+    OrderInstallationPermit,
+    OrderItem,
+    OrderPaymentInstallment,
+    OrderStatus,
+)
 from apps.orders.serializers import (
     ClientMountingProviderCreateSerializer,
     OrderLinePricingUpdateSerializer,
@@ -27,7 +34,10 @@ from apps.orders.serializers import (
     OrderClientPaymentPatchSerializer,
     OrderCreateSerializer,
     OrderInstallationPermitWriteSerializer,
+    OrderPaymentInstallmentReceiptSerializer,
+    OrderPaymentPlanUpdateSerializer,
     OrderSerializer,
+    validate_order_invoice_digital_file,
     validate_order_receipt_file,
 )
 from apps.orders.utils.pdf_documents import build_installation_permit_request_pdf_bytes
@@ -190,8 +200,14 @@ class OrderViewSet(
                     ).order_by("created_at", "id"),
                 ),
                 "status_events__actor",
+                Prefetch(
+                    "payment_plan__installments",
+                    queryset=OrderPaymentInstallment.objects.prefetch_related(
+                        "months"
+                    ).order_by("sequence", "id"),
+                ),
             )
-            .select_related("installation_permit")
+            .select_related("installation_permit", "payment_plan")
             .all()
             .order_by("-created_at", "-id")
         )
@@ -362,6 +378,173 @@ class OrderViewSet(
         )
         ser.is_valid(raise_exception=True)
         order = ser.save()
+        return Response(OrderSerializer(order, context=ctx).data)
+
+    @action(detail=True, methods=["patch"], url_path="payment-plan")
+    def payment_plan(self, request, pk=None):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        instance = self.get_object()
+        ctx = self.get_serializer_context()
+        ser = OrderPaymentPlanUpdateSerializer(
+            data=request.data,
+            context={
+                **ctx,
+                "order": instance,
+                "actor": request.user if request.user.is_authenticated else None,
+            },
+        )
+        ser.is_valid(raise_exception=True)
+        order = ser.save()
+        return Response(OrderSerializer(order, context=ctx).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"payment-plan/installments/(?P<installment_id>[0-9]+)/invoice-digital",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def payment_plan_installment_invoice_digital(self, request, pk=None, installment_id=None):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        order = self.get_object()
+        inst = (
+            OrderPaymentInstallment.objects.filter(
+                pk=installment_id, plan__order_id=order.pk
+            )
+            .select_related("plan")
+            .first()
+        )
+        if inst is None:
+            return Response(
+                {"detail": "Cuota no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        uploaded = request.FILES.get("invoice_digital")
+        if not uploaded:
+            return Response(
+                {"invoice_digital": "Selecciona un archivo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_order_invoice_digital_file(uploaded)
+        except Exception as exc:
+            return Response(
+                {"invoice_digital": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if inst.invoice_pdf:
+            try:
+                inst.invoice_pdf.delete(save=False)
+            except Exception:
+                pass
+        if inst.invoice_digital:
+            try:
+                inst.invoice_digital.delete(save=False)
+            except Exception:
+                pass
+        inst.invoice_digital = uploaded
+        from apps.orders.services.payment_plan_services import sync_installment_status
+
+        sync_installment_status(inst)
+        inst.save(update_fields=["invoice_digital", "invoice_pdf", "status", "updated_at"])
+        ctx = self.get_serializer_context()
+        order.refresh_from_db()
+        return Response(OrderSerializer(order, context=ctx).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"payment-plan/installments/(?P<installment_id>[0-9]+)/generate-invoice",
+    )
+    def payment_plan_installment_generate_invoice(
+        self, request, pk=None, installment_id=None
+    ):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        order = self.get_object()
+        inst = (
+            OrderPaymentInstallment.objects.filter(
+                pk=installment_id, plan__order_id=order.pk
+            )
+            .select_related("plan")
+            .first()
+        )
+        if inst is None:
+            return Response(
+                {"detail": "Cuota no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        from apps.orders.services.payment_plan_services import (
+            generate_installment_invoice_if_pending,
+        )
+
+        try:
+            generate_installment_invoice_if_pending(inst)
+        except Exception as exc:
+            from rest_framework import serializers as drf_serializers
+
+            if isinstance(exc, drf_serializers.ValidationError):
+                return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+            raise
+        ctx = self.get_serializer_context()
+        order.refresh_from_db()
+        return Response(OrderSerializer(order, context=ctx).data)
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"payment-plan/installments/(?P<installment_id>[0-9]+)/payment-receipt",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def payment_plan_installment_receipt(self, request, pk=None, installment_id=None):
+        order = self.get_object()
+        if user_is_admin(request.user):
+            return Response(
+                {"detail": "Los comprobantes los sube la empresa desde Mis pedidos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        client = get_marketplace_client(request.user)
+        if client is None or order.client_id != client.pk:
+            return Response(
+                {"detail": "No tienes permiso para este pedido."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        inst = (
+            OrderPaymentInstallment.objects.filter(
+                pk=installment_id, plan__order_id=order.pk
+            )
+            .select_related("plan")
+            .first()
+        )
+        if inst is None:
+            return Response(
+                {"detail": "Cuota no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        uploaded = request.FILES.get("payment_receipt")
+        if not uploaded:
+            return Response(
+                {"payment_receipt": "Selecciona un archivo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ctx = self.get_serializer_context()
+        ser = OrderPaymentInstallmentReceiptSerializer(
+            data={"payment_receipt": uploaded},
+            context={**ctx, "installment": inst, "request": request},
+        )
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        order.refresh_from_db()
         return Response(OrderSerializer(order, context=ctx).data)
 
     @action(detail=True, methods=["post"], url_path="submit")

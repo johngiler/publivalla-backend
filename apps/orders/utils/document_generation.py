@@ -85,9 +85,13 @@ def save_negotiation_sheet_signed_with_digital_signature(
 
 
 def generate_invoice_pdf_for_order(order: Order) -> None:
+    from apps.orders.services.payment_plan_services import order_uses_split_payment
     from apps.orders.utils.pdf_documents import build_invoice_pdf_bytes
 
     order.refresh_from_db()
+    if order_uses_split_payment(order):
+        generate_first_installment_invoice_pdf(order)
+        return
     pdf = build_invoice_pdf_bytes(order=order)
     _delete_field_file(order, "invoice_pdf")
     order.invoice_pdf.save(
@@ -96,3 +100,41 @@ def generate_invoice_pdf_for_order(order: Order) -> None:
         save=False,
     )
     order.save(update_fields=["invoice_pdf", "updated_at"])
+
+
+def generate_first_installment_invoice_pdf(order: Order) -> None:
+    from apps.orders.models import OrderPaymentInstallmentStatus
+
+    order.refresh_from_db()
+    plan = order.payment_plan
+    inst = plan.installments.order_by("sequence").first()
+    if inst is None:
+        raise ValueError("El plan de pago no tiene cuotas.")
+    generate_installment_invoice_pdf(inst)
+
+
+def generate_installment_invoice_pdf(installment) -> None:
+    from apps.orders.models import OrderPaymentInstallmentStatus
+    from apps.orders.services.payment_plan_services import sync_installment_status
+    from apps.orders.utils.pdf_documents import build_invoice_pdf_bytes
+
+    order = installment.plan.order
+    order.refresh_from_db()
+    pdf = build_invoice_pdf_bytes(order=order, installment=installment)
+    if installment.invoice_pdf:
+        try:
+            installment.invoice_pdf.delete(save=False)
+        except Exception as exc:
+            logger.warning(
+                "No se pudo borrar factura previa de cuota %s: %s",
+                installment.pk,
+                exc,
+            )
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    installment.invoice_pdf.save(
+        f"factura_cuota_{installment.sequence}_pedido_{order.pk}_{ts}.pdf",
+        ContentFile(pdf),
+        save=False,
+    )
+    sync_installment_status(installment)
+    installment.save(update_fields=["invoice_pdf", "status", "updated_at"])

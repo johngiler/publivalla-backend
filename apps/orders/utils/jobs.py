@@ -5,9 +5,11 @@ Sin Celery en el proyecto: ejecutar vía cron o supervisor, por ejemplo::
 
     python manage.py expire_active_orders   # diario, órdenes activas vencidas
     python manage.py expire_order_holds     # cada hora, holds de 72 h vencidos
+    python manage.py invoice_due_payment_installments  # diario, cuotas 2+ al vencer
 
 Si más adelante añades Celery beat, las tareas pueden llamar a
-:func:`run_expire_active_orders_job` y :func:`run_expire_order_holds_job`.
+:func:`run_expire_active_orders_job`, :func:`run_expire_order_holds_job` y
+:func:`run_invoice_due_payment_installments_job`.
 """
 
 from __future__ import annotations
@@ -25,3 +27,10 @@ def run_expire_order_holds_job(*, dry_run: bool = False) -> dict:
     from apps.orders.services import expire_submitted_order_holds
 
     return expire_submitted_order_holds(dry_run=dry_run)
+
+
+def run_invoice_due_payment_installments_job(*, dry_run: bool = False) -> dict:
+    """Genera notas de cobro de cuotas 2+ cuyo vencimiento ya llegó."""
+    from apps.orders.services.payment_plan_services import invoice_due_payment_installments
+
+    return invoice_due_payment_installments(dry_run=dry_run)

@@ -7,6 +7,9 @@ from apps.common.utils.media_layout import (
     order_generated_document_upload,
     order_invoice_digital_upload,
     order_installation_permit_pdf_upload,
+    order_payment_installment_generated_upload,
+    order_payment_installment_invoice_digital_upload,
+    order_payment_installment_receipt_upload,
     order_payment_receipt_upload,
     order_signed_document_upload,
 )
@@ -326,3 +329,101 @@ class OrderInstallationPermit(TimeStampedActiveModel):
 
     def __str__(self):
         return f"Permiso instalación pedido {self.order_id}"
+
+
+class OrderPaymentPlan(TimeStampedActiveModel):
+    """Plan de pago por partes acordado en negociación (un plan por pedido)."""
+
+    order = models.OneToOneField(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="payment_plan",
+    )
+    enabled = models.BooleanField(
+        default=False,
+        help_text="Si está activo, el cobro se divide en cuotas en lugar de un solo pago.",
+    )
+
+    def __str__(self):
+        return f"Plan de pago pedido {self.order_id}"
+
+
+class OrderPaymentInstallmentStatus(models.TextChoices):
+    PENDING = "pending", "Pendiente"
+    INVOICED = "invoiced", "Facturada"
+    PAID = "paid", "Pagada"
+
+
+class OrderPaymentInstallment(TimeStampedActiveModel):
+    """Cuota dentro de un plan de pago por partes."""
+
+    plan = models.ForeignKey(
+        OrderPaymentPlan,
+        on_delete=models.CASCADE,
+        related_name="installments",
+    )
+    sequence = models.PositiveSmallIntegerField(
+        help_text="Orden de la cuota (1 = requerida para activar el contrato).",
+    )
+    due_date = models.DateField(
+        help_text="Vencimiento: inicio del primer mes cubierto por la cuota.",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(
+        max_length=20,
+        choices=OrderPaymentInstallmentStatus.choices,
+        default=OrderPaymentInstallmentStatus.PENDING,
+    )
+    invoice_pdf = models.FileField(
+        upload_to=order_payment_installment_generated_upload,
+        blank=True,
+        null=True,
+    )
+    invoice_digital = models.FileField(
+        upload_to=order_payment_installment_invoice_digital_upload,
+        blank=True,
+        null=True,
+    )
+    payment_receipt = models.FileField(
+        upload_to=order_payment_installment_receipt_upload,
+        blank=True,
+        null=True,
+    )
+    notified_2d_at = models.DateTimeField(null=True, blank=True)
+    notified_1d_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["sequence", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("plan", "sequence"),
+                name="orders_installment_plan_sequence_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Cuota {self.sequence} plan {self.plan_id}"
+
+
+class OrderPaymentInstallmentMonth(models.Model):
+    """Mes de calendario incluido en una cuota (único por plan)."""
+
+    installment = models.ForeignKey(
+        OrderPaymentInstallment,
+        on_delete=models.CASCADE,
+        related_name="months",
+    )
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ["year", "month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("installment", "year", "month"),
+                name="orders_installment_month_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.year}-{self.month:02d}"

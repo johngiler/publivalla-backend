@@ -413,6 +413,8 @@ class OrderSerializer(serializers.ModelSerializer):
     catalog_subtotal = serializers.SerializerMethodField()
     discount_total = serializers.SerializerMethodField()
     line_pricing_editable = serializers.SerializerMethodField()
+    split_payment_enabled = serializers.SerializerMethodField()
+    payment_plan = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -430,6 +432,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "catalog_subtotal",
             "discount_total",
             "line_pricing_editable",
+            "split_payment_enabled",
+            "payment_plan",
             "submitted_at",
             "hold_expires_at",
             "created_at",
@@ -464,6 +468,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "catalog_subtotal",
             "discount_total",
             "line_pricing_editable",
+            "split_payment_enabled",
+            "payment_plan",
             "submitted_at",
             "hold_expires_at",
             "created_at",
@@ -568,6 +574,16 @@ class OrderSerializer(serializers.ModelSerializer):
 
         return order_line_pricing_editable(obj)
 
+    def get_split_payment_enabled(self, obj):
+        from apps.orders.services.payment_plan_services import order_uses_split_payment
+
+        return order_uses_split_payment(obj)
+
+    def get_payment_plan(self, obj):
+        from apps.orders.services.payment_plan_services import get_payment_plan_payload
+
+        return get_payment_plan_payload(obj)
+
     def get_installation_permit(self, obj):
         from django.core.exceptions import ObjectDoesNotExist
 
@@ -607,6 +623,18 @@ class OrderClientPaymentPatchSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+        if self.instance:
+            from apps.orders.services.payment_plan_services import order_uses_split_payment
+
+            if order_uses_split_payment(self.instance):
+                raise serializers.ValidationError(
+                    {
+                        "detail": (
+                            "Este pedido usa pago por partes. Adjunta el comprobante en cada "
+                            "cuota del plan de pagos."
+                        )
+                    }
+                )
         return attrs
 
     def update(self, instance, validated_data):
@@ -709,6 +737,18 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+        if "invoice_digital" in attrs and attrs.get("invoice_digital") is not None:
+            from apps.orders.services.payment_plan_services import order_uses_split_payment
+
+            if order_uses_split_payment(self.instance):
+                raise serializers.ValidationError(
+                    {
+                        "invoice_digital": (
+                            "Con pago por partes activo, adjunta la factura en cada cuota "
+                            "del plan de pagos."
+                        )
+                    }
+                )
         new_status = attrs.get("status", self.instance.status)
         if (
             new_status == OrderStatus.EXPIRED
@@ -765,16 +805,31 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
             new_status == OrderStatus.PAID
             and self.instance.status != OrderStatus.PAID
             and self.instance.status == OrderStatus.INVOICED
-            and not self.instance.payment_receipt
         ):
-            raise serializers.ValidationError(
-                {
-                    "status": (
-                        "El cliente debe adjuntar el comprobante de pago desde Mis pedidos antes "
-                        "de pasar el pedido a «Pagada»."
-                    )
-                }
+            from apps.orders.services.payment_plan_services import (
+                first_installment_has_receipt,
+                order_uses_split_payment,
             )
+
+            if order_uses_split_payment(self.instance):
+                if not first_installment_has_receipt(self.instance):
+                    raise serializers.ValidationError(
+                        {
+                            "status": (
+                                "El cliente debe adjuntar el comprobante de la primera cuota "
+                                "desde Mis pedidos antes de pasar el pedido a «Pagada»."
+                            )
+                        }
+                    )
+            elif not self.instance.payment_receipt:
+                raise serializers.ValidationError(
+                    {
+                        "status": (
+                            "El cliente debe adjuntar el comprobante de pago desde Mis pedidos "
+                            "antes de pasar el pedido a «Pagada»."
+                        )
+                    }
+                )
         if (
             new_status == OrderStatus.ART_APPROVED
             and self.instance.status != OrderStatus.ART_APPROVED
@@ -1321,3 +1376,84 @@ class OrderCreateSerializer(OrderReservationInfoWriteMixin, serializers.Serializ
             note="Orden creada (borrador).",
         )
         return order
+
+
+class OrderPaymentPlanMonthSerializer(serializers.Serializer):
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+
+
+class OrderPaymentPlanInstallmentWriteSerializer(serializers.Serializer):
+    months = OrderPaymentPlanMonthSerializer(many=True, allow_empty=False)
+
+
+class OrderPaymentPlanUpdateSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    installments = OrderPaymentPlanInstallmentWriteSerializer(
+        many=True, required=False, allow_null=True
+    )
+
+    def validate(self, attrs):
+        if attrs.get("enabled") and not attrs.get("installments"):
+            raise serializers.ValidationError(
+                {"installments": "Indica al menos una cuota."}
+            )
+        return attrs
+
+    def save(self, **kwargs):
+        order = self.context["order"]
+        from apps.orders.services.payment_plan_services import update_order_payment_plan
+
+        return update_order_payment_plan(
+            order,
+            enabled=self.validated_data["enabled"],
+            installments=self.validated_data.get("installments"),
+            actor=self.context.get("actor"),
+        )
+
+
+class OrderPaymentInstallmentReceiptSerializer(serializers.Serializer):
+    payment_receipt = serializers.FileField()
+
+    def validate_payment_receipt(self, value):
+        return validate_order_receipt_file(value)
+
+    def save(self, **kwargs):
+        installment = self.context["installment"]
+        order = installment.plan.order
+        if order.status not in (OrderStatus.INVOICED, OrderStatus.PAID):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Solo puedes adjuntar comprobante cuando el pedido está "
+                        "«Facturada» o «Pagada»."
+                    )
+                }
+            )
+        old = installment.payment_receipt if installment.payment_receipt else None
+        installment.payment_receipt = self.validated_data["payment_receipt"]
+        from apps.orders.services.payment_plan_services import sync_installment_status
+
+        sync_installment_status(installment)
+        installment.save(update_fields=["payment_receipt", "status", "updated_at"])
+        if old and getattr(old, "name", None) != getattr(
+            installment.payment_receipt, "name", None
+        ):
+            old.delete(save=False)
+        req = self.context.get("request")
+        aid = (
+            req.user.pk
+            if req and getattr(req, "user", None) is not None and req.user.is_authenticated
+            else None
+        )
+        oid = order.pk
+
+        def _enqueue() -> None:
+            from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
+
+            schedule_send_order_client_activity_admin_emails(
+                oid, "payment_receipt", actor_id=aid
+            )
+
+        transaction.on_commit(_enqueue)
+        return installment

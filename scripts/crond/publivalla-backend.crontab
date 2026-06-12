@@ -8,3 +8,6 @@
 
 # Órdenes «activa» con última línea pasada: pasar a «vencida» (diario 00:15)
 15 0 * * * cd /home/git/backend && .venv/bin/python manage.py expire_active_orders >> /home/git/backend/logs/cron-expire-active-orders.log 2>&1
+
+# Cuotas 2+ de pago por partes: generar nota de cobro al vencer (diario 06:05)
+5 6 * * * cd /home/git/backend && .venv/bin/python manage.py invoice_due_payment_installments >> /home/git/backend/logs/cron-invoice-due-installments.log 2>&1

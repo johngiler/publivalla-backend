@@ -233,6 +233,45 @@ def order_invoice_digital_upload(instance, filename: str) -> str:
     return _order_file_upload(instance, filename, "orders", "invoices-external")
 
 
+def _workspace_from_payment_installment(instance):
+    plan = getattr(instance, "plan", None)
+    if plan is None:
+        pid = getattr(instance, "plan_id", None)
+        if pid:
+            OrderPaymentPlan = apps.get_model("orders", "OrderPaymentPlan")
+            plan = (
+                OrderPaymentPlan.objects.filter(pk=pid)
+                .select_related("order__client__workspace")
+                .first()
+            )
+    order = getattr(plan, "order", None) if plan else None
+    return _workspace_from_order(order)
+
+
+def _payment_installment_file_upload(instance, filename: str, *path_segments: str) -> str:
+    ws = _workspace_from_payment_installment(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, *path_segments, filename=filename)
+
+
+def order_payment_installment_generated_upload(instance, filename: str) -> str:
+    return _payment_installment_file_upload(
+        instance, filename, "orders", "installments", "generated"
+    )
+
+
+def order_payment_installment_invoice_digital_upload(instance, filename: str) -> str:
+    return _payment_installment_file_upload(
+        instance, filename, "orders", "installments", "invoices-external"
+    )
+
+
+def order_payment_installment_receipt_upload(instance, filename: str) -> str:
+    return _payment_installment_file_upload(
+        instance, filename, "orders", "installments", "receipts"
+    )
+
+
 def order_signed_document_upload(instance, filename: str) -> str:
     return _order_file_upload(instance, filename, "orders", "signed")
 

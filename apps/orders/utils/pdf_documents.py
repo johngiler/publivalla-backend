@@ -641,7 +641,18 @@ def build_negotiation_sheet_pdf_bytes(
             description_lines.append(code)
     importe_txt = "<br/>".join(_escape(x) for x in importe_lines)
 
-    pay_cond = "Según acuerdo comercial con el centro."
+    from apps.orders.services.payment_plan_services import (
+        format_payment_plan_observation_text,
+        order_uses_split_payment,
+    )
+
+    if order_uses_split_payment(order):
+        try:
+            pay_cond = format_payment_plan_observation_text(order.payment_plan)
+        except Exception:
+            pay_cond = "Pago por partes acordado con el centro."
+    else:
+        pay_cond = "Pago único según acuerdo comercial con el centro."
     obs_parts = []
     if description_lines:
         obs_parts.append("\n".join(description_lines))
@@ -880,14 +891,29 @@ def build_municipality_authorization_pdf_bytes(*, order) -> bytes:
     return MunicipalityAuthorizationPdfBuilder.render_story(order, story)
 
 
-def build_invoice_pdf_bytes(*, order) -> bytes:
+def build_invoice_pdf_bytes(*, order, installment=None) -> bytes:
     """Factura resumida (referencia comercial; no es timbrado fiscal externo)."""
     from apps.orders.services import order_line_pricing_totals
+    from apps.orders.services.payment_plan_services import (
+        format_months_label,
+        format_payment_plan_observation_text,
+    )
 
     client = order.client
     items = _order_items_for_pdf(order)
-    total = order.total_amount or Decimal("0")
-    catalog, discount = order_line_pricing_totals(order)
+    if installment is not None:
+        total = installment.amount or Decimal("0")
+        plan = installment.plan
+        inst_total = plan.installments.count()
+        months = sorted((m.year, m.month) for m in installment.months.all())
+        period_lbl = format_months_label(months)
+        catalog = total
+        discount = Decimal("0")
+    else:
+        total = order.total_amount or Decimal("0")
+        catalog, discount = order_line_pricing_totals(order)
+        inst_total = 0
+        period_lbl = ""
     iva = (total * IVA_RATE).quantize(Decimal("0.01"))
     grand = (total + iva).quantize(Decimal("0.01"))
     order_ref = (order.code or "").strip() or f"#{order.pk}"
@@ -895,7 +921,21 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
     title_st, body_st, _, _ = _styles()
     story = []
     InvoicePdfBuilder.prepend_branding_for(order, story)
-    story.append(Paragraph("NOTA DE COBRO", title_st))
+    if installment is not None:
+        story.append(
+            Paragraph(
+                f"NOTA DE COBRO — Cuota {installment.sequence} de {inst_total}",
+                title_st,
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Periodo de esta cuota:</b> {_escape(period_lbl)}",
+                body_st,
+            )
+        )
+    else:
+        story.append(Paragraph("NOTA DE COBRO", title_st))
     story.append(
         Paragraph(f"<b>Pedido:</b> {_escape(order_ref)}", body_st))
     story.append(Spacer(1, 0.3 * cm))
@@ -923,16 +963,28 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
             _p_cell("Importe USD", inv_head, bold=True),
         ]
     ]
-    for it in items:
-        desc = f"{it.ad_space.code} — {it.ad_space.name}"
+    if installment is not None:
         rows.append(
             [
-                _p_cell(desc, inv_cell),
+                _p_cell(
+                    f"Alquiler publicitario — {period_lbl} (cuota {installment.sequence})",
+                    inv_cell,
+                ),
                 _p_cell("1", inv_num),
-                _p_cell(f"${it.subtotal:,.2f}", inv_num),
+                _p_cell(f"${total:,.2f}", inv_num),
             ]
         )
-    if discount > 0:
+    else:
+        for it in items:
+            desc = f"{it.ad_space.code} — {it.ad_space.name}"
+            rows.append(
+                [
+                    _p_cell(desc, inv_cell),
+                    _p_cell("1", inv_num),
+                    _p_cell(f"${it.subtotal:,.2f}", inv_num),
+                ]
+            )
+    if discount > 0 and installment is None:
         rows.append(
             [
                 _p_cell("", inv_cell),
@@ -974,6 +1026,12 @@ def build_invoice_pdf_bytes(*, order) -> bytes:
         )
     )
     story.append(t)
+    if installment is not None:
+        story.append(Spacer(1, 0.4 * cm))
+        obs = format_payment_plan_observation_text(installment.plan)
+        story.append(Paragraph("<b>Plan de pago acordado</b>", body_st))
+        for line in obs.split("\n"):
+            story.append(Paragraph(_escape(line), body_st))
     return InvoicePdfBuilder.render_story(order, story)
 
 
