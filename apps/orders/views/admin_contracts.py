@@ -14,6 +14,7 @@ from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpaceImage
 from apps.common.utils.pagination import StandardPagination
 from apps.orders.models import OrderItem, OrderStatus
+from apps.orders.services.payment_plan_services import order_uses_split_payment
 from apps.users.permissions import IsAdminRole
 from apps.workspaces.tenant import get_workspace_for_request
 
@@ -83,7 +84,7 @@ class AdminMarketplaceContractsView(APIView):
                 order__client__workspace=ws,
                 order__status__in=(OrderStatus.ACTIVE, OrderStatus.EXPIRED),
             )
-            .select_related("order", "order__client", "ad_space__shopping_center")
+            .select_related("order", "order__client", "order__payment_plan", "ad_space__shopping_center")
             .prefetch_related(
                 Prefetch(
                     "ad_space__gallery_images",
@@ -222,6 +223,7 @@ class AdminMarketplaceContractsView(APIView):
                     "order_code": it.order.code or "",
                     "order_status": it.order.status,
                     "order_status_label": it.order.get_status_display(),
+                    "split_payment_enabled": order_uses_split_payment(it.order),
                     "contract_row_kind": kind,
                     "client_id": client.id,
                     "client_company_name": (client.company_name or "").strip(),
