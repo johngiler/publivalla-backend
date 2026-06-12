@@ -8,6 +8,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -70,6 +71,32 @@ def order_uses_split_payment(order: Order) -> bool:
     except OrderPaymentPlan.DoesNotExist:
         return False
     return bool(plan.enabled)
+
+
+def payment_plan_pending_param_active(raw: str) -> bool:
+    """Query ``payment_plan_pending=pending`` (u homólogos truthy)."""
+    return (raw or "").strip().lower() in ("pending", "1", "true", "yes")
+
+
+def _incomplete_payment_installment_subquery(*, order_outer_ref: str):
+    return OrderPaymentInstallment.objects.filter(
+        plan__order_id=OuterRef(order_outer_ref),
+        plan__enabled=True,
+    ).exclude(status=OrderPaymentInstallmentStatus.PAID)
+
+
+def filter_orders_with_incomplete_payment_plan(qs):
+    """Pedidos con plan activo y al menos una cuota sin pagar."""
+    return qs.filter(payment_plan__enabled=True).filter(
+        Exists(_incomplete_payment_installment_subquery(order_outer_ref="pk"))
+    )
+
+
+def filter_order_items_with_incomplete_payment_plan(qs):
+    """Líneas cuyo pedido tiene plan activo con cuotas pendientes."""
+    return qs.filter(order__payment_plan__enabled=True).filter(
+        Exists(_incomplete_payment_installment_subquery(order_outer_ref="order_id"))
+    )
 
 
 def _iter_calendar_months(start: date, end: date):

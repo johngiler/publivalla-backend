@@ -18,7 +18,11 @@ from apps.ad_spaces.serializers import AdSpaceSerializer
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.clients.models import ClientAdSpaceFavorite
 from apps.orders.models import OrderItem, OrderStatus
-from apps.orders.services.payment_plan_services import order_uses_split_payment
+from apps.orders.services.payment_plan_services import (
+    filter_order_items_with_incomplete_payment_plan,
+    order_uses_split_payment,
+    payment_plan_pending_param_active,
+)
 from apps.users.utils import get_marketplace_client, user_is_admin
 
 
@@ -33,7 +37,9 @@ def _contract_row_kind(*, order_status: str, start_date, end_date, today) -> str
 class MyContractsView(APIView):
     """
     Líneas de pedido en órdenes activas o vencidas (contrato operativo tras el flujo hasta activa).
-    Query: ?phase=running|upcoming|ended|open|all (``open`` = en curso + próximos, sin finalizados).
+    Query:
+      - phase=running|upcoming|ended|open|all (``open`` = en curso + próximos, sin finalizados)
+      - payment_plan_pending=pending — solo líneas cuyo pedido tiene cuotas sin pagar
     """
 
     permission_classes = [IsAuthenticated]
@@ -73,6 +79,11 @@ class MyContractsView(APIView):
             )
             .order_by("-end_date", "-start_date", "-id")
         )
+
+        if payment_plan_pending_param_active(
+            request.query_params.get("payment_plan_pending", "")
+        ):
+            qs = filter_order_items_with_incomplete_payment_plan(qs)
 
         total_invested = qs.aggregate(s=Sum("subtotal"))["s"] or Decimal("0")
 

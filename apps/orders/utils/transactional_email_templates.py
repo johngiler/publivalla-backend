@@ -764,3 +764,144 @@ def build_order_client_activity_admin_email(
     lines.extend(
         ["", f"Ir al panel de pedidos: {orders_admin_url}", "", footer])
     return subject, "\n".join(lines), html_body, inline_logo
+
+
+InstallmentDueReminderAudience = Literal["client", "admin"]
+
+_MONTH_NAMES_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+def format_installment_due_date_label(due_date) -> str:
+    """Etiqueta legible para correos (p. ej. «1 de julio de 2026»)."""
+    if due_date is None:
+        return "—"
+    m = int(due_date.month)
+    name = _MONTH_NAMES_ES[m - 1] if 1 <= m <= 12 else str(m)
+    return f"{int(due_date.day)} de {name} de {int(due_date.year)}"
+
+
+def build_payment_installment_due_reminder_email(
+    *,
+    audience: InstallmentDueReminderAudience,
+    marketplace_title: str,
+    company_name: str,
+    order_code: str,
+    installment_sequence: int,
+    installment_total: int,
+    period_label: str,
+    amount_usd: str,
+    due_date_label: str,
+    days_before: int,
+    has_invoice: bool,
+    action_url: str,
+    accent_hex: str | None,
+    workspace,
+) -> tuple[str, str, str, tuple[bytes, str, str] | None]:
+    """Recordatorio de vencimiento de cuota (pago por partes)."""
+    mp = (marketplace_title or "").strip() or "Marketplace"
+    company = (company_name or "").strip() or "—"
+    code = (order_code or "").strip()
+    seq = int(installment_sequence)
+    total = int(installment_total)
+    when = (
+        "mañana"
+        if days_before == 1
+        else f"en {days_before} días"
+    )
+
+    if audience == "client":
+        subject = f"{mp}: cuota {seq} de tu pedido vence {when}"
+        headline = f"Próximo vencimiento de cuota {seq}"
+        if has_invoice:
+            lead = (
+                f"La cuota {seq} de {total} de tu pedido vence {when} "
+                f"({due_date_label}). Ya puedes consultar la factura y adjuntar el "
+                "comprobante de pago en Mis pedidos."
+            )
+        else:
+            lead = (
+                f"La cuota {seq} de {total} de tu pedido vence {when} "
+                f"({due_date_label}). En la fecha de vencimiento emitiremos la "
+                "nota de cobro correspondiente; luego podrás pagarla desde Mis pedidos."
+            )
+        cta_label = "Ir a Mis pedidos"
+        footer = (
+            "Recordatorio automático del plan de pago por partes acordado en tu pedido."
+        )
+    else:
+        subject = f"{mp}: cuota {seq} de «{company}» vence {when}"
+        headline = f"Cuota {seq} próxima a vencer"
+        if has_invoice:
+            lead = (
+                f"La empresa «{company}» tiene la cuota {seq} de {total} con factura "
+                f"emitida; vence {when} ({due_date_label}). Puedes hacer seguimiento en el panel."
+            )
+        else:
+            lead = (
+                f"La empresa «{company}» tiene la cuota {seq} de {total} que vence "
+                f"{when} ({due_date_label}). La nota de cobro se generará en la fecha "
+                "de vencimiento si aún no está facturada."
+            )
+        cta_label = "Ir al panel de pedidos"
+        footer = (
+            "Recordatorio automático del plan de pago por partes. "
+            "No cambia el estado del pedido."
+        )
+
+    rows: list[tuple[str, str]] = []
+    if code:
+        rows.append(("Referencia del pedido", code))
+    if audience == "admin":
+        rows.append(("Empresa", company))
+    rows.extend(
+        [
+            ("Cuota", f"{seq} de {total}"),
+            ("Periodo", period_label or "—"),
+            ("Monto (sin IVA)", f"USD {amount_usd}"),
+            ("Vence", due_date_label),
+        ]
+    )
+
+    accent = _cta_background_hex(accent_hex)
+    inline_logo = prepare_workspace_logo_for_transactional_email(workspace)
+    brand_alt = (
+        (
+            (getattr(workspace, "marketplace_title", None)
+             or getattr(workspace, "name", None) or "")
+            .strip()
+            if workspace is not None
+            else ""
+        )
+        or mp
+    )
+    html_body = _render_transactional_shell(
+        document_title=subject,
+        headline=headline,
+        lead=lead,
+        rows=rows,
+        cta_url=action_url,
+        cta_label=cta_label,
+        footer_note=footer,
+        accent_hex=accent,
+        inline_logo=inline_logo,
+        tenant_logo_alt=brand_alt,
+    )
+    lines = [headline, "", lead, ""]
+    for label, value in rows:
+        if (value or "").strip():
+            lines.append(f"{label}: {value}")
+    lines.extend(["", f"{cta_label}: {action_url}", "", footer])
+    return subject, "\n".join(lines), html_body, inline_logo

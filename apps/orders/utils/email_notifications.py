@@ -25,6 +25,8 @@ from apps.orders.utils.transactional_email_templates import (
     OrderStatusAudience,
     build_order_client_activity_admin_email,
     build_order_status_transactional_email,
+    build_payment_installment_due_reminder_email,
+    format_installment_due_date_label,
 )
 from apps.workspaces.utils.email_inline_logo import workspace_email_logo_inline_filename
 from apps.users.models import UserProfile
@@ -556,3 +558,131 @@ def try_send_order_status_emails(
             from_status,
             to_status,
         )
+
+
+def try_send_payment_installment_due_reminder_emails(
+    installment,
+    *,
+    days_before: int,
+) -> bool:
+    """
+    Recordatorio de vencimiento de cuota (cliente y administradores del workspace).
+
+    Marca éxito solo si cada grupo con correo configurado recibió el mensaje.
+    """
+    from apps.orders.services.payment_plan_services import (
+        format_months_label,
+        installment_has_invoice,
+    )
+
+    if days_before not in (1, 2):
+        logger.warning(
+            "Días antes de vencimiento no soportados para recordatorio: %s",
+            days_before,
+        )
+        return False
+
+    order = installment.plan.order
+    ws = order.client.workspace
+    if ws is None:
+        return False
+    if not (ws.transactional_email_from_address or "").strip():
+        return False
+
+    months = sorted((m.year, m.month) for m in installment.months.all())
+    period_label = format_months_label(months)
+    has_invoice = installment_has_invoice(installment)
+    total_count = installment.plan.installments.count()
+    marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
+    accent = (getattr(ws, "primary_color", None) or "").strip() or None
+    amount_usd = f"{installment.amount:,.2f}"
+    due_date_label = format_installment_due_date_label(installment.due_date)
+    order_code = (order.code or "").strip()
+    company = (order.client.company_name or "").strip()
+
+    client_emails = _emails_client_company(order)
+    admin_emails = _emails_marketplace_admins(order)
+    if not client_emails and not admin_emails:
+        logger.info(
+            "Cuota %s (pedido %s): sin destinatarios para recordatorio %s días antes.",
+            installment.pk,
+            order.pk,
+            days_before,
+        )
+        return False
+
+    client_ok: bool | None = None
+    admin_ok: bool | None = None
+
+    if client_emails:
+        subject, body, html_body, inline_logo = (
+            build_payment_installment_due_reminder_email(
+                audience="client",
+                marketplace_title=marketplace,
+                company_name=company,
+                order_code=order_code,
+                installment_sequence=installment.sequence,
+                installment_total=total_count,
+                period_label=period_label,
+                amount_usd=amount_usd,
+                due_date_label=due_date_label,
+                days_before=days_before,
+                has_invoice=has_invoice,
+                action_url=_order_client_orders_url(order),
+                accent_hex=accent,
+                workspace=ws,
+            )
+        )
+        client_ok = send_workspace_transactional_email(
+            ws,
+            to_emails=client_emails,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            inline_logo=inline_logo,
+        )
+
+    if admin_emails:
+        subject, body, html_body, inline_logo = (
+            build_payment_installment_due_reminder_email(
+                audience="admin",
+                marketplace_title=marketplace,
+                company_name=company,
+                order_code=order_code,
+                installment_sequence=installment.sequence,
+                installment_total=total_count,
+                period_label=period_label,
+                amount_usd=amount_usd,
+                due_date_label=due_date_label,
+                days_before=days_before,
+                has_invoice=has_invoice,
+                action_url=_order_admin_orders_url(order),
+                accent_hex=accent,
+                workspace=ws,
+            )
+        )
+        admin_ok = send_workspace_transactional_email(
+            ws,
+            to_emails=admin_emails,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            inline_logo=inline_logo,
+        )
+
+    if client_emails and not client_ok:
+        logger.warning(
+            "No se envió recordatorio de cuota al cliente (pedido %s, cuota %s).",
+            order.pk,
+            installment.pk,
+        )
+        return False
+    if admin_emails and not admin_ok:
+        logger.warning(
+            "No se envió recordatorio de cuota a administradores (pedido %s, cuota %s).",
+            order.pk,
+            installment.pk,
+        )
+        return False
+
+    return True

@@ -14,7 +14,11 @@ from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpaceImage
 from apps.common.utils.pagination import StandardPagination
 from apps.orders.models import OrderItem, OrderStatus
-from apps.orders.services.payment_plan_services import order_uses_split_payment
+from apps.orders.services.payment_plan_services import (
+    filter_order_items_with_incomplete_payment_plan,
+    order_uses_split_payment,
+    payment_plan_pending_param_active,
+)
 from apps.users.permissions import IsAdminRole
 from apps.workspaces.tenant import get_workspace_for_request
 
@@ -66,6 +70,7 @@ class AdminMarketplaceContractsView(APIView):
       - ordering: -end_date | end_date | -start_date | start_date | client
       - client_id: id numérico de empresa (opcional)
       - ad_space_id: id numérico de toma (opcional)
+      - payment_plan_pending: pending — solo pedidos con plan activo y cuotas sin pagar
     """
 
     permission_classes = [IsAdminRole]
@@ -136,6 +141,11 @@ class AdminMarketplaceContractsView(APIView):
         search = request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(_build_contracts_search_q(search))
+
+        if payment_plan_pending_param_active(
+            request.query_params.get("payment_plan_pending", "")
+        ):
+            qs = filter_order_items_with_incomplete_payment_plan(qs)
 
         ordering = (request.query_params.get("ordering") or "-end_date").strip()
         allowed = {

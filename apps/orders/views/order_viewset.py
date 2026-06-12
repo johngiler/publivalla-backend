@@ -237,6 +237,15 @@ class OrderViewSet(
             search = self.request.query_params.get("search", "").strip()
             if search:
                 qs = qs.filter(_build_order_list_search_q(search)).distinct()
+            from apps.orders.services.payment_plan_services import (
+                filter_orders_with_incomplete_payment_plan,
+                payment_plan_pending_param_active,
+            )
+
+            if payment_plan_pending_param_active(
+                self.request.query_params.get("payment_plan_pending", "")
+            ):
+                qs = filter_orders_with_incomplete_payment_plan(qs)
         return qs
 
     def get_serializer_class(self):
