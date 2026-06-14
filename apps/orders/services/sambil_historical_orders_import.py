@@ -97,7 +97,7 @@ _SAMBIL_HISTORICAL_ORDER_ROWS = [
         ),
     },
     {
-        "ad_space_code": "SMB-T5C",
+        "ad_space_code": "SMR-T5C",
         "client_key": "grupo_cashea",
         "start": date(2025, 12, 1),
         "end": date(2026, 4, 30),
@@ -137,7 +137,7 @@ _SAMBIL_HISTORICAL_ORDER_ROWS = [
         ),
     },
     {
-        "ad_space_code": "SMB-T5C",
+        "ad_space_code": "SMR-T5C",
         "client_key": "grupo_cashea",
         "start": date(2026, 5, 1),
         "end": date(2026, 9, 30),
@@ -217,7 +217,7 @@ _SAMBIL_HISTORICAL_ORDER_ROWS = [
         ),
     },
     {
-        "ad_space_code": "SSN-T4V",
+        "ad_space_code": "SSN-T4B",
         "client_key": "grupo_cashea",
         "start": date(2026, 5, 1),
         "end": date(2026, 9, 30),
