@@ -67,6 +67,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
     hem_pocket_top_cm = serializers.SerializerMethodField(read_only=True)
     location_image = serializers.SerializerMethodField(read_only=True)
     production_image = serializers.SerializerMethodField(read_only=True)
+    location_images = serializers.SerializerMethodField(read_only=True)
+    production_images = serializers.SerializerMethodField(read_only=True)
     cover_image = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField()
     mounting_providers = serializers.SerializerMethodField(read_only=True)
@@ -120,6 +122,8 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "cover_image",
             "location_image",
             "production_image",
+            "location_images",
+            "production_images",
             "gallery_images",
             "venue_zone",
             "double_sided",
@@ -196,11 +200,33 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             return None
         return self._absolute_media_url(field.url) or None
 
+    def get_location_images(self, obj):
+        request = self.context.get("request")
+        out = []
+        for i in obj.location_images.all().order_by("sort_order", "id"):
+            if not i.image:
+                continue
+            u = i.image.url
+            out.append(request.build_absolute_uri(u) if request else u)
+        return out
+
+    def get_production_images(self, obj):
+        request = self.context.get("request")
+        out = []
+        for i in obj.production_images.all().order_by("sort_order", "id"):
+            if not i.image:
+                continue
+            u = i.image.url
+            out.append(request.build_absolute_uri(u) if request else u)
+        return out
+
     def get_location_image(self, obj):
-        return self._absolute_media_file(obj.location_image)
+        images = self.get_location_images(obj)
+        return images[0] if images else None
 
     def get_production_image(self, obj):
-        return self._absolute_media_file(obj.production_image)
+        images = self.get_production_images(obj)
+        return images[0] if images else None
 
     def get_catalog_public(self, obj):
         return shopping_center_allows_public_catalog(obj.shopping_center)

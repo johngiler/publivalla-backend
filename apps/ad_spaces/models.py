@@ -84,18 +84,6 @@ class AdSpace(TimeStampedActiveModel):
         null=True,
         help_text="Copia de la primera imagen de galería (portada).",
     )
-    location_image = models.ImageField(
-        upload_to=ad_space_location_image_upload,
-        blank=True,
-        null=True,
-        help_text="Plano o foto de ubicación del espacio.",
-    )
-    production_image = models.ImageField(
-        upload_to=ad_space_production_image_upload,
-        blank=True,
-        null=True,
-        help_text="Referencia de arte y producción.",
-    )
 
     class Meta:
         ordering = ["shopping_center", "code"]
@@ -104,7 +92,7 @@ class AdSpace(TimeStampedActiveModel):
         return self.code
 
     def save(self, *args, **kwargs):
-        _webp_fields = ("cover_image", "location_image", "production_image")
+        _webp_fields = ("cover_image",)
         _uf = kwargs.get("update_fields")
         if _uf is None or any(f in _uf for f in _webp_fields):
             ensure_imagefields_webp(self, _webp_fields)
@@ -154,6 +142,56 @@ class AdSpaceImage(models.Model):
 
     def __str__(self):
         return f"{self.ad_space_id}:{self.sort_order}"
+
+    def save(self, *args, **kwargs):
+        _webp_fields = ("image",)
+        _uf = kwargs.get("update_fields")
+        if _uf is None or any(f in _uf for f in _webp_fields):
+            ensure_imagefields_webp(self, _webp_fields)
+        return super().save(*args, **kwargs)
+
+
+class AdSpaceLocationImage(models.Model):
+    """Plano o foto de ubicación del espacio (una o varias)."""
+
+    ad_space = models.ForeignKey(
+        AdSpace,
+        on_delete=models.CASCADE,
+        related_name="location_images",
+    )
+    image = models.ImageField(upload_to=ad_space_location_image_upload)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return f"loc:{self.ad_space_id}:{self.sort_order}"
+
+    def save(self, *args, **kwargs):
+        _webp_fields = ("image",)
+        _uf = kwargs.get("update_fields")
+        if _uf is None or any(f in _uf for f in _webp_fields):
+            ensure_imagefields_webp(self, _webp_fields)
+        return super().save(*args, **kwargs)
+
+
+class AdSpaceProductionImage(models.Model):
+    """Referencia de arte y producción (una o varias)."""
+
+    ad_space = models.ForeignKey(
+        AdSpace,
+        on_delete=models.CASCADE,
+        related_name="production_images",
+    )
+    image = models.ImageField(upload_to=ad_space_production_image_upload)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return f"prod:{self.ad_space_id}:{self.sort_order}"
 
     def save(self, *args, **kwargs):
         _webp_fields = ("image",)

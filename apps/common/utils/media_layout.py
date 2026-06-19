@@ -131,13 +131,13 @@ def ad_space_gallery_upload(instance, filename: str) -> str:
 
 
 def ad_space_location_image_upload(instance, filename: str) -> str:
-    ws = _workspace_from_ad_space(instance)
+    ws = _workspace_from_ad_space_image(instance)
     owner = _safe_owner_slug_from_workspace(ws)
     return _join_under_workspace_slug(owner, "spaces", "location", filename=filename)
 
 
 def ad_space_production_image_upload(instance, filename: str) -> str:
-    ws = _workspace_from_ad_space(instance)
+    ws = _workspace_from_ad_space_image(instance)
     owner = _safe_owner_slug_from_workspace(ws)
     return _join_under_workspace_slug(owner, "spaces", "production", filename=filename)
 

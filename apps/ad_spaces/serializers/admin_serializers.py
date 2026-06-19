@@ -39,9 +39,9 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
     )
     availability_label = serializers.SerializerMethodField()
     gallery_images = serializers.SerializerMethodField(read_only=True)
+    location_images = serializers.SerializerMethodField(read_only=True)
+    production_images = serializers.SerializerMethodField(read_only=True)
     formats = AdSpaceFormatSerializer(many=True, read_only=True)
-    location_image_url = serializers.SerializerMethodField(read_only=True)
-    production_image_url = serializers.SerializerMethodField(read_only=True)
     # Alias legacy para consumidores que aún lean `title`
     title = serializers.CharField(source="name", read_only=True)
 
@@ -61,11 +61,9 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
             "availability",
             "availability_label",
             "cover_image",
-            "location_image",
-            "production_image",
-            "location_image_url",
-            "production_image_url",
             "gallery_images",
+            "location_images",
+            "production_images",
             "formats",
             "is_active",
             "created_at",
@@ -74,8 +72,6 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at", "updated_at", "formats")
         extra_kwargs = {
             "cover_image": {"required": False, "allow_null": True},
-            "location_image": {"required": False, "allow_null": True},
-            "production_image": {"required": False, "allow_null": True},
         }
 
     def __init__(self, *args, **kwargs):
@@ -124,12 +120,6 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
             return uri
         return url
 
-    def get_location_image_url(self, obj):
-        return self._absolute_media(obj.location_image)
-
-    def get_production_image_url(self, obj):
-        return self._absolute_media(obj.production_image)
-
     def get_gallery_images(self, obj):
         out = []
         for i in obj.gallery_images.all():
@@ -141,3 +131,21 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
                 }
             )
         return out
+
+    def _reference_images(self, obj, relation: str):
+        out = []
+        for i in getattr(obj, relation).all():
+            out.append(
+                {
+                    "id": i.id,
+                    "image": i.image.url if i.image else "",
+                    "sort_order": i.sort_order,
+                }
+            )
+        return out
+
+    def get_location_images(self, obj):
+        return self._reference_images(obj, "location_images")
+
+    def get_production_images(self, obj):
+        return self._reference_images(obj, "production_images")

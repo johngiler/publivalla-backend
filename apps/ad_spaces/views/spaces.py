@@ -157,6 +157,8 @@ class AdSpaceViewSet(viewsets.ReadOnlyModelViewSet):
         qs = self._catalog_base_qs(self.request).select_related("shopping_center")
         return qs.prefetch_related(
             "gallery_images",
+            "location_images",
+            "production_images",
             Prefetch(
                 "formats",
                 queryset=AdSpaceFormat.objects.select_related("product_type").order_by(

@@ -7,7 +7,11 @@ from rest_framework.response import Response
 
 from apps.ad_spaces.serializers import AdSpaceAdminSerializer
 from apps.ad_spaces.utils.format_sync import apply_ad_space_formats_from_request
-from apps.ad_spaces.utils.gallery import apply_ad_space_gallery_from_request
+from apps.ad_spaces.utils.gallery import (
+    apply_ad_space_gallery_from_request,
+    apply_ad_space_location_images_from_request,
+    apply_ad_space_production_images_from_request,
+)
 from apps.ad_spaces.models import AdSpace
 from apps.malls.models import ShoppingCenter
 from apps.users.views.base_viewsets import AdminModelViewSet
@@ -45,6 +49,8 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             serializer.validated_data.get("shopping_center"))
         instance = serializer.save()
         apply_ad_space_gallery_from_request(instance, self.request)
+        apply_ad_space_location_images_from_request(instance, self.request)
+        apply_ad_space_production_images_from_request(instance, self.request)
         apply_ad_space_formats_from_request(instance, self.request)
 
     def perform_update(self, serializer):
@@ -53,6 +59,8 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
             self._assert_center_in_tenant(center)
         instance = serializer.save()
         apply_ad_space_gallery_from_request(instance, self.request)
+        apply_ad_space_location_images_from_request(instance, self.request)
+        apply_ad_space_production_images_from_request(instance, self.request)
         apply_ad_space_formats_from_request(instance, self.request)
 
     def get_queryset(self):
@@ -81,6 +89,8 @@ class AdSpaceAdminViewSet(AdminModelViewSet):
                 qs = qs.filter(shopping_center_id=int(center_raw))
         return qs.prefetch_related(
             "gallery_images",
+            "location_images",
+            "production_images",
             "formats__product_type",
         )
 
