@@ -33,7 +33,8 @@ class Migration(migrations.Migration):
     dependencies = [
         ("orders", "0012_alter_orderpaymentinstallment_is_active_and_more"),
         ("clients", "0005_seed_sambil_historical_clients"),
-        ("workspaces", "0001_initial"),
+        ("ad_spaces", "0008_adspace_location_production_galleries"),
+        ("workspaces", "0008_workspace_rif"),
     ]
 
     operations = [

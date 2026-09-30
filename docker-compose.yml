@@ -1,0 +1,40 @@
+# LOCAL only — Postgres for developer machines.
+# DEV/PRODUCTION use native Postgres; do not run this compose on those hosts.
+#
+# `name` evita compartir el proyecto Compose "backend" con Ubintrack y PortPax
+# (si no, `docker-compose up` en esta carpeta recrea los otros contenedores).
+#
+# 5432 = ubintrack, 5433 = portpax. This project uses host port 5434
+# (POSTGRES_PORT in backend/.env).
+#
+# Usage (from backend/):
+#   docker-compose up -d
+#   docker-compose down
+#   docker-compose logs -f postgres
+
+name: publivalla
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: publivalla-postgres-local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-publivalla}
+      POSTGRES_USER: ${POSTGRES_USER:-publivalla}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - publivalla_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  publivalla_pgdata:
+    name: publivalla_pgdata
