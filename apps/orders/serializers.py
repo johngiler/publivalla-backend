@@ -418,6 +418,11 @@ class OrderSerializer(serializers.ModelSerializer):
     iva_percent = serializers.SerializerMethodField()
     line_pricing_editable = serializers.SerializerMethodField()
     split_payment_enabled = serializers.SerializerMethodField()
+    ended_early = serializers.BooleanField(read_only=True)
+    early_end_note = serializers.CharField(read_only=True)
+    early_end_refund_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
     payment_plan = serializers.SerializerMethodField()
 
     class Meta:
@@ -440,6 +445,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "iva_percent",
             "line_pricing_editable",
             "split_payment_enabled",
+            "ended_early",
+            "early_end_note",
+            "early_end_refund_amount",
             "payment_plan",
             "submitted_at",
             "hold_expires_at",
@@ -479,6 +487,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "iva_percent",
             "line_pricing_editable",
             "split_payment_enabled",
+            "ended_early",
+            "early_end_note",
+            "early_end_refund_amount",
             "payment_plan",
             "submitted_at",
             "hold_expires_at",
@@ -606,6 +617,14 @@ class OrderSerializer(serializers.ModelSerializer):
         from apps.orders.services.payment_plan_services import order_uses_split_payment
 
         return order_uses_split_payment(obj)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request is None or not user_is_admin(request.user):
+            data.pop("early_end_note", None)
+            data.pop("early_end_refund_amount", None)
+        return data
 
     def get_payment_plan(self, obj):
         from apps.orders.services.payment_plan_services import get_payment_plan_payload
@@ -785,7 +804,7 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {
                     "status": (
-                        "El estado «Vencida» lo asigna el sistema cuando la última línea del pedido "
+                        "El estado «Finalizada» lo asigna el sistema cuando la última línea del pedido "
                         "supera su fecha de fin (proceso automático programado). "
                         "No se puede marcar manualmente."
                     )
@@ -1450,7 +1469,8 @@ class OrderPaymentInstallmentReceiptSerializer(serializers.Serializer):
     def save(self, **kwargs):
         installment = self.context["installment"]
         order = installment.plan.order
-        if order.status not in (OrderStatus.INVOICED, OrderStatus.PAID):
+        client_upload = self.context.get("promote_paid", True)
+        if client_upload and order.status not in (OrderStatus.INVOICED, OrderStatus.PAID):
             raise serializers.ValidationError(
                 {
                     "detail": (
@@ -1463,7 +1483,10 @@ class OrderPaymentInstallmentReceiptSerializer(serializers.Serializer):
         installment.payment_receipt = self.validated_data["payment_receipt"]
         from apps.orders.services.payment_plan_services import sync_installment_status
 
-        sync_installment_status(installment)
+        sync_installment_status(
+            installment,
+            promote_paid=self.context.get("promote_paid", True),
+        )
         installment.save(update_fields=["payment_receipt", "status", "updated_at"])
         if old and getattr(old, "name", None) != getattr(
             installment.payment_receipt, "name", None
@@ -1477,12 +1500,14 @@ class OrderPaymentInstallmentReceiptSerializer(serializers.Serializer):
         )
         oid = order.pk
 
-        def _enqueue() -> None:
-            from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
+        if client_upload:
 
-            schedule_send_order_client_activity_admin_emails(
-                oid, "payment_receipt", actor_id=aid
-            )
+            def _enqueue() -> None:
+                from apps.orders.tasks import schedule_send_order_client_activity_admin_emails
 
-        transaction.on_commit(_enqueue)
+                schedule_send_order_client_activity_admin_emails(
+                    oid, "payment_receipt", actor_id=aid
+                )
+
+            transaction.on_commit(_enqueue)
         return installment

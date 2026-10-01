@@ -273,18 +273,69 @@ def installment_has_invoice(inst: OrderPaymentInstallment) -> bool:
     )
 
 
-def sync_installment_status(inst: OrderPaymentInstallment) -> None:
+_INSTALLMENT_STATUS_RANK = {
+    OrderPaymentInstallmentStatus.PENDING: 0,
+    OrderPaymentInstallmentStatus.INVOICED: 1,
+    OrderPaymentInstallmentStatus.PAID: 2,
+}
+
+
+def sync_installment_status(
+    inst: OrderPaymentInstallment,
+    *,
+    promote_paid: bool = True,
+) -> None:
+    """Alinea el estado con los archivos. No baja una cuota ya pagada.
+
+    ``promote_paid`` marca pagada al guardar el comprobante (flujo del cliente).
+    El admin adjunta el archivo y cambia el estado aparte.
+    """
+    if inst.status == OrderPaymentInstallmentStatus.PAID:
+        return
     has_receipt = bool(getattr(inst.payment_receipt, "name", ""))
-    has_invoice = bool(
-        getattr(inst.invoice_digital, "name", "")
-        or getattr(inst.invoice_pdf, "name", "")
-    )
-    if has_receipt:
+    has_invoice = installment_has_invoice(inst)
+    due_ok = inst.due_date is not None and inst.due_date <= timezone.localdate()
+    if promote_paid and has_receipt and has_invoice and due_ok:
         inst.status = OrderPaymentInstallmentStatus.PAID
     elif has_invoice:
         inst.status = OrderPaymentInstallmentStatus.INVOICED
     else:
         inst.status = OrderPaymentInstallmentStatus.PENDING
+
+
+def set_installment_status_forward(
+    inst: OrderPaymentInstallment,
+    new_status: str,
+) -> None:
+    """Avanza el estado de la cuota. No permite volver a un estado anterior."""
+    if new_status not in _INSTALLMENT_STATUS_RANK:
+        raise serializers.ValidationError({"detail": "Estado de cuota no válido."})
+    current = inst.status or OrderPaymentInstallmentStatus.PENDING
+    if new_status == current:
+        return
+    if _INSTALLMENT_STATUS_RANK[new_status] < _INSTALLMENT_STATUS_RANK.get(current, 0):
+        raise serializers.ValidationError(
+            {"detail": "No puedes regresar el estado de la cuota."}
+        )
+    if new_status == OrderPaymentInstallmentStatus.INVOICED and not installment_has_invoice(
+        inst
+    ):
+        raise serializers.ValidationError({"detail": "Falta la factura de la cuota."})
+    if new_status == OrderPaymentInstallmentStatus.PAID:
+        if inst.due_date is None or inst.due_date > timezone.localdate():
+            raise serializers.ValidationError(
+                {
+                    "detail": "Solo puedes marcarla pagada si vence hoy o ya venció.",
+                }
+            )
+        if not installment_has_invoice(inst):
+            raise serializers.ValidationError({"detail": "Falta la factura de la cuota."})
+        if not getattr(inst.payment_receipt, "name", ""):
+            raise serializers.ValidationError(
+                {"detail": "Falta el comprobante de la cuota."}
+            )
+    inst.status = new_status
+    inst.save(update_fields=["status", "updated_at"])
 
 
 def get_payment_plan_payload(order: Order) -> dict:
@@ -372,7 +423,7 @@ def update_order_payment_plan(
             {
                 "detail": (
                     "No puedes modificar el plan de pago cuando el pedido ya está "
-                    "activo, vencido o rechazado."
+                    "activo, finalizado o rechazado."
                 )
             }
         )
@@ -493,6 +544,10 @@ def generate_installment_invoice_if_pending(
     if not installment.plan.enabled:
         raise serializers.ValidationError(
             {"detail": "El plan de pago no está activo."}
+        )
+    if installment.plan.order.status not in _INSTALLMENT_AUTO_INVOICE_ORDER_STATUSES:
+        raise serializers.ValidationError(
+            {"detail": "Este contrato ya no admite facturas de cuota."}
         )
     if installment.status == OrderPaymentInstallmentStatus.PAID:
         raise serializers.ValidationError(

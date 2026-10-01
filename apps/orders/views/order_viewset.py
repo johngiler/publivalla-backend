@@ -10,6 +10,7 @@ from django.db.models import Prefetch, Q
 from django.http import FileResponse, HttpResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -41,8 +42,26 @@ from apps.orders.serializers import (
     validate_order_receipt_file,
 )
 from apps.orders.utils.pdf_documents import build_installation_permit_request_pdf_bytes
-from apps.orders.services import log_order_status_transition, submit_draft_order
+from apps.orders.services import (
+    finish_contract_early,
+    log_order_status_transition,
+    submit_draft_order,
+)
 from apps.users.utils import get_marketplace_client, user_is_admin
+
+
+def _validation_detail_text(detail) -> str:
+    if isinstance(detail, dict):
+        parts = []
+        for value in detail.values():
+            if isinstance(value, (list, tuple)):
+                parts.extend(str(item) for item in value)
+            else:
+                parts.append(str(value))
+        return " ".join(parts).strip() or "No se pudo finalizar el contrato."
+    if isinstance(detail, (list, tuple)):
+        return " ".join(str(item) for item in detail).strip()
+    return str(detail)
 from apps.workspaces.tenant import get_workspace_for_request
 
 logger = logging.getLogger(__name__)
@@ -246,6 +265,17 @@ class OrderViewSet(
                 self.request.query_params.get("payment_plan_pending", "")
             ):
                 qs = filter_orders_with_incomplete_payment_plan(qs)
+            center_raw = self.request.query_params.get("shopping_center", "").strip()
+            if center_raw.isdigit():
+                qs = qs.filter(
+                    items__ad_space__shopping_center_id=int(center_raw),
+                ).distinct()
+            if (self.request.query_params.get("ended_early") or "").strip() in (
+                "1",
+                "true",
+                "early",
+            ):
+                qs = qs.filter(ended_early=True)
         return qs
 
     def get_serializer_class(self):
@@ -343,10 +373,47 @@ class OrderViewSet(
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["post"], url_path="finish-contract")
+    def finish_contract(self, request, pk=None):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        order = self.get_object()
+        raw_refund = request.data.get("refund_amount", None)
+        refund = None
+        if raw_refund not in (None, ""):
+            from decimal import Decimal, InvalidOperation
+
+            try:
+                refund = Decimal(str(raw_refund).strip().replace(",", "."))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {"refund_amount": "Indica un monto válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            finish_contract_early(
+                order,
+                actor=request.user,
+                note=request.data.get("note") or "",
+                refund_amount=refund,
+            )
+        except DRFValidationError as exc:
+            return Response(
+                {"detail": _validation_detail_text(exc.detail)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        order.refresh_from_db()
+        return Response(
+            OrderSerializer(order, context=self.get_serializer_context()).data
+        )
+
     @action(detail=False, methods=["get"], url_path="export-report")
     def export_report(self, request):
         """
-        Descarga .xlsx con pedidos y líneas (mismos filtros que el listado: búsqueda y estado).
+        Descarga .xlsx con pedidos y líneas (mismos filtros que el listado).
         Solo administración del workspace.
         """
         if not user_is_admin(request.user):
@@ -517,17 +584,14 @@ class OrderViewSet(
     )
     def payment_plan_installment_receipt(self, request, pk=None, installment_id=None):
         order = self.get_object()
-        if user_is_admin(request.user):
-            return Response(
-                {"detail": "Los comprobantes los sube la empresa desde Mis pedidos."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        client = get_marketplace_client(request.user)
-        if client is None or order.client_id != client.pk:
-            return Response(
-                {"detail": "No tienes permiso para este pedido."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        is_admin = user_is_admin(request.user)
+        if not is_admin:
+            client = get_marketplace_client(request.user)
+            if client is None or order.client_id != client.pk:
+                return Response(
+                    {"detail": "No tienes permiso para este pedido."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         inst = (
             OrderPaymentInstallment.objects.filter(
                 pk=installment_id, plan__order_id=order.pk
@@ -549,10 +613,55 @@ class OrderViewSet(
         ctx = self.get_serializer_context()
         ser = OrderPaymentInstallmentReceiptSerializer(
             data={"payment_receipt": uploaded},
-            context={**ctx, "installment": inst, "request": request},
+            context={
+                **ctx,
+                "installment": inst,
+                "request": request,
+                "promote_paid": not is_admin,
+            },
         )
         ser.is_valid(raise_exception=True)
         ser.save()
+        order.refresh_from_db()
+        return Response(OrderSerializer(order, context=ctx).data)
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"payment-plan/installments/(?P<installment_id>[0-9]+)/status",
+    )
+    def payment_plan_installment_status(self, request, pk=None, installment_id=None):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "No tienes permiso para esta acción."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        order = self.get_object()
+        inst = (
+            OrderPaymentInstallment.objects.filter(
+                pk=installment_id, plan__order_id=order.pk
+            )
+            .select_related("plan")
+            .first()
+        )
+        if inst is None:
+            return Response(
+                {"detail": "Cuota no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        from apps.orders.services.payment_plan_services import (
+            set_installment_status_forward,
+        )
+
+        try:
+            set_installment_status_forward(inst, str(request.data.get("status") or ""))
+        except Exception as exc:
+            from rest_framework import serializers as drf_serializers
+
+            if isinstance(exc, drf_serializers.ValidationError):
+                return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+            raise
+        ctx = self.get_serializer_context()
         order.refresh_from_db()
         return Response(OrderSerializer(order, context=ctx).data)
 

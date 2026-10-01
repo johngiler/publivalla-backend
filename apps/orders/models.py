@@ -45,7 +45,7 @@ class OrderStatus(models.TextChoices):
     PERMIT_PENDING = "permit_pending", "Permiso alcaldía"
     INSTALLATION = "installation", "Instalación"
     ACTIVE = "active", "Activa"
-    EXPIRED = "expired", "Vencida"
+    EXPIRED = "expired", "Finalizada"
     CANCELLED = "cancelled", "Rechazada"
 
 
@@ -145,6 +145,22 @@ class Order(TimeStampedActiveModel):
         null=True,
         blank=True,
         help_text="Cuando mercadeo del CC validó la instalación conforme.",
+    )
+    ended_early = models.BooleanField(
+        default=False,
+        help_text="El admin cerró el contrato antes de la fecha de fin.",
+    )
+    early_end_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Motivo de la finalización anticipada.",
+    )
+    early_end_refund_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Reembolso registrado al finalizar un pago completo. Vacío si no aplica.",
     )
 
     class Meta:

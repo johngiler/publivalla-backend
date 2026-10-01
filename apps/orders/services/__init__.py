@@ -7,6 +7,7 @@ from apps.orders.services.order_hold_services import (
 )
 from apps.orders.services.order_services import (
     expire_active_orders_after_contract_end,
+    finish_contract_early,
     log_order_status_transition,
     order_line_pricing_totals,
     submit_draft_order,
@@ -25,6 +26,7 @@ from apps.orders.services.payment_plan_services import (
 __all__ = [
     "expire_active_orders_after_contract_end",
     "expire_submitted_order_holds",
+    "finish_contract_early",
     "first_installment_has_receipt",
     "generate_installment_invoice_if_pending",
     "get_payment_plan_payload",

@@ -21,7 +21,7 @@ from apps.orders.utils.jobs import run_expire_active_orders_job
 
 
 class Command(BaseCommand):
-    help = "Marca como vencidas las órdenes activas cuyo contrato (última línea) ya finalizó."
+    help = "Marca como finalizadas las órdenes activas cuyo contrato (última línea) ya terminó."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -41,4 +41,4 @@ class Command(BaseCommand):
                 self.stdout.write(f"IDs: {ids}")
         else:
             n = result.get("expired", 0)
-            self.stdout.write(self.style.SUCCESS(f"Órdenes pasadas a vencida: {n}."))
+            self.stdout.write(self.style.SUCCESS(f"Órdenes pasadas a finalizada: {n}."))

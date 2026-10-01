@@ -90,6 +90,9 @@ def build_orders_report_workbook(orders) -> Workbook:
         "Ciudad",
         "Estado cliente",
         "Workspace (slug)",
+        "Cierre",
+        "Observaciones de cierre",
+        "Reembolso USD",
     ]
     for c, h in enumerate(order_headers, start=1):
         cell = ws_o.cell(row=1, column=c, value=h)
@@ -144,6 +147,19 @@ def build_orders_report_workbook(orders) -> Workbook:
         if cl and getattr(cl, "workspace", None):
             slug = _cell_str(cl.workspace.slug)
         ws_o.cell(row=row_o, column=19, value=slug)
+        ws_o.cell(
+            row=row_o,
+            column=20,
+            value="Finalización anticipada" if order.ended_early else "",
+        )
+        ws_o.cell(row=row_o, column=21, value=_cell_str(order.early_end_note))
+        ws_o.cell(
+            row=row_o,
+            column=22,
+            value=_money(order.early_end_refund_amount)
+            if order.early_end_refund_amount is not None
+            else "",
+        )
         row_o += 1
 
         for it in order.items.all():

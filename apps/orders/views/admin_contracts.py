@@ -71,6 +71,7 @@ class AdminMarketplaceContractsView(APIView):
       - client_id: id numérico de empresa (opcional)
       - ad_space_id: id numérico de toma (opcional)
       - payment_plan_pending: pending — solo pedidos con plan activo y cuotas sin pagar
+      - shopping_center: id numérico de centro comercial (opcional)
     """
 
     permission_classes = [IsAdminRole]
@@ -137,6 +138,17 @@ class AdminMarketplaceContractsView(APIView):
         aid = request.query_params.get("ad_space_id", "").strip()
         if aid.isdigit():
             qs = qs.filter(ad_space_id=int(aid))
+
+        center_raw = request.query_params.get("shopping_center", "").strip()
+        if center_raw.isdigit():
+            qs = qs.filter(ad_space__shopping_center_id=int(center_raw))
+
+        if (request.query_params.get("ended_early") or "").strip() in (
+            "1",
+            "true",
+            "early",
+        ):
+            qs = qs.filter(order__ended_early=True)
 
         search = request.query_params.get("search", "").strip()
         if search:
@@ -234,6 +246,13 @@ class AdminMarketplaceContractsView(APIView):
                     "order_status": it.order.status,
                     "order_status_label": it.order.get_status_display(),
                     "split_payment_enabled": order_uses_split_payment(it.order),
+                    "ended_early": bool(it.order.ended_early),
+                    "early_end_note": it.order.early_end_note or "",
+                    "early_end_refund_amount": (
+                        str(it.order.early_end_refund_amount)
+                        if it.order.early_end_refund_amount is not None
+                        else None
+                    ),
                     "contract_row_kind": kind,
                     "client_id": client.id,
                     "client_company_name": (client.company_name or "").strip(),

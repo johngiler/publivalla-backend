@@ -25,7 +25,7 @@ from apps.orders.utils.validators import (
 )
 
 AUTO_EXPIRE_NOTE = (
-    "Vencimiento automático: la última línea del contrato ya superó su fecha de fin."
+    "Finalización automática: la última línea del contrato ya superó su fecha de fin."
 )
 
 logger = logging.getLogger(__name__)
@@ -483,6 +483,78 @@ def update_order_line_pricing(
     return order
 
 
+def apply_contract_finished(
+    order: Order,
+    *,
+    actor: AbstractBaseUser | None = None,
+    note: str,
+    early: bool = False,
+    refund_amount: Decimal | None = None,
+) -> Order:
+    """Pasa un contrato activo a finalizado y registra el mismo evento que el cierre natural."""
+    prev = order.status
+    order.status = OrderStatus.EXPIRED
+    fields = ["status", "updated_at"]
+    if early:
+        order.ended_early = True
+        order.early_end_note = note
+        order.early_end_refund_amount = refund_amount
+        fields.extend(["ended_early", "early_end_note", "early_end_refund_amount"])
+    order.save(update_fields=fields)
+    log_order_status_transition(
+        order,
+        prev,
+        OrderStatus.EXPIRED,
+        actor=actor,
+        note=note,
+    )
+    return order
+
+
+def finish_contract_early(
+    order: Order,
+    *,
+    actor: AbstractBaseUser | None,
+    note: str,
+    refund_amount: Decimal | None = None,
+) -> Order:
+    """Cierre manual. Pago por partes no lleva reembolso; el pago completo puede registrarlo."""
+    from rest_framework import serializers
+
+    from apps.orders.services.payment_plan_services import order_uses_split_payment
+
+    cleaned = (note or "").strip()
+    if not cleaned:
+        raise serializers.ValidationError(
+            {"note": "Escribe el motivo de la finalización."}
+        )
+    if order.status != OrderStatus.ACTIVE:
+        raise serializers.ValidationError(
+            {"detail": "Solo puedes finalizar un contrato que está activo."}
+        )
+    split = order_uses_split_payment(order)
+    if split:
+        refund_amount = None
+    elif refund_amount is not None and refund_amount < 0:
+        raise serializers.ValidationError(
+            {"refund_amount": "El reembolso no puede ser negativo."}
+        )
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if locked.status != OrderStatus.ACTIVE:
+            raise serializers.ValidationError(
+                {"detail": "Solo puedes finalizar un contrato que está activo."}
+            )
+        return apply_contract_finished(
+            locked,
+            actor=actor,
+            note=cleaned,
+            early=True,
+            refund_amount=refund_amount,
+        )
+
+
 def expire_active_orders_after_contract_end(
     *,
     today: date | None = None,
@@ -522,15 +594,6 @@ def expire_active_orders_after_contract_end(
             last_end = agg["m"]
             if last_end is None or last_end >= ref:
                 continue
-            prev = order.status
-            Order.objects.filter(pk=pk, status=OrderStatus.ACTIVE).update(status=OrderStatus.EXPIRED)
-            order.refresh_from_db()
-            log_order_status_transition(
-                order,
-                prev,
-                OrderStatus.EXPIRED,
-                actor=actor,
-                note=AUTO_EXPIRE_NOTE,
-            )
+            apply_contract_finished(order, actor=actor, note=AUTO_EXPIRE_NOTE)
             expired_n += 1
     return {"expired": expired_n, "order_ids": candidate_ids}

@@ -125,6 +125,7 @@ class MyContractsView(APIView):
                     "order_status": it.order.status,
                     "order_status_label": it.order.get_status_display(),
                     "split_payment_enabled": order_uses_split_payment(it.order),
+                    "ended_early": bool(it.order.ended_early),
                     "contract_row_kind": kind,
                     "ad_space_id": ad.id,
                     "ad_space_code": ad.code,
