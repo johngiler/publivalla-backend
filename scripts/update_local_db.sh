@@ -7,7 +7,7 @@
 #   2. scp the dump -> backend/data/db/
 #   3. ./scripts/restore_db.sh <dump>  (local .env)
 #
-# Requires: SSH Host publivalla-api (same as deploy.sh / sync_media_from_dev.sh).
+# Requires: SSH Host publivalla-api (same as deploy.sh / sync_media_from_prod.sh).
 # Remote path: /home/git/backend on api.publivalla.com.
 #
 # Usage (from backend/ or anywhere):

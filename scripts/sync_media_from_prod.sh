@@ -7,9 +7,9 @@
 # Remote path: /home/git/backend/media/ on api.publivalla.com.
 #
 # Usage (from backend/ or anywhere):
-#   ./scripts/sync_media_from_dev.sh
-#   ./scripts/sync_media_from_dev.sh --delete   # also remove local files absent on the remote
-#   ./scripts/sync_media_from_dev.sh --dry-run
+#   ./scripts/sync_media_from_prod.sh
+#   ./scripts/sync_media_from_prod.sh --delete   # also remove local files absent on the remote
+#   ./scripts/sync_media_from_prod.sh --dry-run
 #
 
 set -euo pipefail
