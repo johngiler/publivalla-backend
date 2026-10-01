@@ -20,15 +20,27 @@ from __future__ import annotations
 def run_expire_active_orders_job(*, dry_run: bool = False) -> dict:
     """Marca como vencidas las órdenes activas cuyo contrato ya terminó (ver servicio)."""
     from apps.orders.services import expire_active_orders_after_contract_end
+    from apps.orders.services.admin_notifications import (
+        notify_contracts_ending_in_30_days,
+        notify_contracts_starting_today,
+    )
 
-    return expire_active_orders_after_contract_end(dry_run=dry_run)
+    result = expire_active_orders_after_contract_end(dry_run=dry_run)
+    if not dry_run:
+        result["contracts_started"] = notify_contracts_starting_today()
+        result["contracts_ending_soon"] = notify_contracts_ending_in_30_days()
+    return result
 
 
 def run_expire_order_holds_job(*, dry_run: bool = False) -> dict:
     """Cancela pedidos enviados con hold vencido y libera tomas reservadas."""
     from apps.orders.services import expire_submitted_order_holds
+    from apps.orders.services.admin_notifications import notify_holds_expiring_soon
 
-    return expire_submitted_order_holds(dry_run=dry_run)
+    result = expire_submitted_order_holds(dry_run=dry_run)
+    if not dry_run:
+        result["holds_expiring"] = notify_holds_expiring_soon()
+    return result
 
 
 def run_invoice_due_payment_installments_job(*, dry_run: bool = False) -> dict:

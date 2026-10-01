@@ -798,6 +798,27 @@ class OrderAdminPatchSerializer(serializers.ModelSerializer):
                 )
         new_status = attrs.get("status", self.instance.status)
         if (
+            self.instance.status == OrderStatus.EXPIRED
+            and new_status != OrderStatus.EXPIRED
+        ):
+            raise serializers.ValidationError(
+                {
+                    "status": "Un pedido finalizado no se puede cambiar de estado.",
+                }
+            )
+        if (
+            new_status == OrderStatus.CANCELLED
+            and self.instance.status != OrderStatus.CANCELLED
+        ):
+            from apps.orders.services.order_hold_services import order_hold_is_active
+
+            if not order_hold_is_active(self.instance):
+                raise serializers.ValidationError(
+                    {
+                        "status": "Solo puedes rechazar un pedido que está reservado.",
+                    }
+                )
+        if (
             new_status == OrderStatus.EXPIRED
             and self.instance.status != OrderStatus.EXPIRED
         ):

@@ -27,6 +27,8 @@ if DEBUG:
             ALLOWED_HOSTS.append(_suffix)
 
 INSTALLED_APPS = [
+    "daphne",
+    "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -62,6 +64,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 TEMPLATES = [
     {
@@ -205,6 +208,21 @@ CELERY_TASK_EAGER_PROPAGATES = True
 _explicit_eager = (os.environ.get("CELERY_TASK_ALWAYS_EAGER",
                    "").lower() in ("1", "true", "yes"))
 CELERY_TASK_ALWAYS_EAGER = _explicit_eager or (not CELERY_BROKER_URL)
+
+# Daphne (WebSockets de la campanita). Redis compartido con Celery para que gunicorn
+# publique y Daphne entregue. Sin broker, la capa en memoria sirve un solo proceso.
+_channel_redis = CELERY_BROKER_URL if CELERY_BROKER_URL.startswith("redis") else ""
+if _channel_redis:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [_channel_redis]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
+    }
 
 # En producción, siempre usar Redis/Celery (sin fallback).
 if not DEBUG and (os.environ.get("DJANGO_ENV") or "").strip().lower() == "production":

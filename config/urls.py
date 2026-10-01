@@ -33,6 +33,10 @@ from apps.orders.views import (
     GuestCheckoutView,
     OrderViewSet,
 )
+from apps.orders.views.admin_notifications import (
+    AdminNotificationListView,
+    AdminNotificationReadView,
+)
 from apps.orders.views.competing_reservations import (
     AdminCompetingReservationAwardView,
     AdminCompetingReservationsCountView,
@@ -210,6 +214,16 @@ urlpatterns = [
         "api/admin/contracts/",
         AdminMarketplaceContractsView.as_view(),
         name="admin-marketplace-contracts",
+    ),
+    path(
+        "api/admin/notifications/",
+        AdminNotificationListView.as_view(),
+        name="admin-notifications",
+    ),
+    path(
+        "api/admin/notifications/read/",
+        AdminNotificationReadView.as_view(),
+        name="admin-notifications-read",
     ),
     path("api/auth/me/", MeView.as_view(), name="auth-me"),
     path("api/auth/me/password/", MePasswordView.as_view(), name="auth-me-password"),

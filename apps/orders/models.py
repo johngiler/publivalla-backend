@@ -451,3 +451,61 @@ class OrderPaymentInstallmentMonth(models.Model):
 
     def __str__(self):
         return f"{self.year}-{self.month:02d}"
+
+
+class AdminNotificationKind(models.TextChoices):
+    ORDER_SUBMITTED = "order_submitted", "Pedido nuevo"
+    COMPETING_BID = "competing_bid", "Puja"
+    NEGOTIATION_SIGNED = "negotiation_signed", "Hoja firmada"
+    ART_UPLOADED = "art_uploaded", "Arte cargado"
+    PAYMENT_RECEIPT = "payment_receipt", "Comprobante de pago"
+    HOLD_EXPIRING = "hold_expiring", "Reserva por vencer"
+    HOLD_EXPIRED = "hold_expired", "Reserva vencida"
+    CONTRACT_RUNNING = "contract_running", "Contrato en curso"
+    CONTRACT_ENDING_SOON = "contract_ending_soon", "Por finalizar"
+    CONTRACT_FINISHED = "contract_finished", "Contrato finalizado"
+    CONTRACT_ENDED_EARLY = "contract_ended_early", "Finalización anticipada"
+
+
+class AdminNotification(models.Model):
+    """Aviso de la campanita del admin. Una fila por destinatario."""
+
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="admin_notifications",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="admin_notifications",
+    )
+    kind = models.CharField(max_length=32, choices=AdminNotificationKind.choices)
+    title = models.CharField(max_length=120)
+    body = models.CharField(max_length=280)
+    href = models.CharField(max_length=300)
+    dedupe_key = models.CharField(max_length=160)
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="admin_notifications",
+    )
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("recipient", "dedupe_key"),
+                name="orders_admin_notification_recipient_dedupe",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("recipient", "read_at", "-created_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} → {self.recipient_id}"

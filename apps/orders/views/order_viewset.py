@@ -88,12 +88,6 @@ def _build_order_list_search_q(search: str) -> Q:
             q |= Q(pk=int(norm))
         except (ValueError, OverflowError):
             pass
-    m = re.search(r"-ORDER-(\d+)$", norm)
-    if m:
-        try:
-            q |= Q(pk=int(m.group(1)))
-        except (ValueError, OverflowError):
-            pass
     return q
 
 
@@ -270,12 +264,6 @@ class OrderViewSet(
                 qs = qs.filter(
                     items__ad_space__shopping_center_id=int(center_raw),
                 ).distinct()
-            if (self.request.query_params.get("ended_early") or "").strip() in (
-                "1",
-                "true",
-                "early",
-            ):
-                qs = qs.filter(ended_early=True)
         return qs
 
     def get_serializer_class(self):

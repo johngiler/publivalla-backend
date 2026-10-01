@@ -176,6 +176,9 @@ def schedule_send_order_client_activity_admin_emails(
     actor_id: int | None = None,
 ) -> None:
     """Encola aviso a administradores del workspace (comprobante, hoja firmada, arte)."""
+    from apps.orders.services.admin_notifications import notify_client_activity
+
+    notify_client_activity(order_id, activity, actor_id=actor_id)
     if not _has_celery_broker():
         logger.warning(
             "No se envió correo de actividad de cliente: falta CELERY_BROKER_URL (pedido %s, %s).",

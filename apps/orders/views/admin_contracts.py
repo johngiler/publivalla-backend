@@ -49,12 +49,6 @@ def _build_contracts_search_q(search: str) -> Q:
             q |= Q(order_id=int(norm))
         except (ValueError, OverflowError):
             pass
-    m = re.search(r"-ORDER-(\d+)$", norm)
-    if m:
-        try:
-            q |= Q(order_id=int(m.group(1)))
-        except (ValueError, OverflowError):
-            pass
     return q
 
 

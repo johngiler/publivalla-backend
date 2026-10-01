@@ -52,6 +52,8 @@ def log_order_status_transition(
     order_id = order.pk
     from_s = from_status or ""
     actor_id = getattr(actor, "pk", None) if actor is not None else None
+    event_note = note or ""
+    event_at = created_at if created_at is not None else timezone.now()
 
     def enqueue_status_emails() -> None:
         to_s = (to_status or "").strip()
@@ -71,7 +73,41 @@ def log_order_status_transition(
             skip_client_status_email=skip_client,
         )
 
+    def enqueue_admin_notifications() -> None:
+        from datetime import timedelta
+
+        from apps.orders.services.admin_notifications import (
+            notify_contract_finished,
+            notify_contract_lines_running,
+            notify_hold_expired,
+            notify_order_submitted,
+        )
+        from apps.orders.services.order_hold_services import NOTE_HOLD_EXPIRED
+
+        if event_at < timezone.now() - timedelta(minutes=2):
+            return
+        to_s = (to_status or "").strip()
+        if from_s == to_s or to_s == OrderStatus.DRAFT:
+            return
+        try:
+            current = Order.objects.get(pk=order_id)
+        except Order.DoesNotExist:
+            return
+        if to_s == OrderStatus.SUBMITTED:
+            notify_order_submitted(current)
+        elif to_s == OrderStatus.CANCELLED and event_note == NOTE_HOLD_EXPIRED:
+            notify_hold_expired(current)
+        elif to_s == OrderStatus.EXPIRED:
+            notify_contract_finished(
+                current,
+                early=bool(current.ended_early),
+                exclude_user_id=actor_id if current.ended_early else None,
+            )
+        elif to_s == OrderStatus.ACTIVE:
+            notify_contract_lines_running(current)
+
     transaction.on_commit(enqueue_status_emails)
+    transaction.on_commit(enqueue_admin_notifications)
     return ev
 
 
