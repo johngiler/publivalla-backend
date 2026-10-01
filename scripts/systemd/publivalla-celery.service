@@ -14,6 +14,8 @@ ExecStart=/home/git/backend/.venv/bin/celery -A config worker -l INFO --concurre
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
+StandardOutput=append:/var/log/celery.log
+StandardError=append:/var/log/celery.log
 
 [Install]
 WantedBy=multi-user.target
