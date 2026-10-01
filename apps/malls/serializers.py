@@ -31,6 +31,7 @@ class ShoppingCenterSerializer(serializers.ModelSerializer):
             "high_season_months",
             "high_season_multiplier",
             "rental_billing_unit",
+            "charges_iva",
             "mounting_providers",
             "tomas_count",
             "display_title",

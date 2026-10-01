@@ -19,6 +19,7 @@ from apps.orders.models import (
 from apps.malls.models import ShoppingCenter
 from apps.providers.models import MountingProvider
 from apps.orders.services import log_order_status_transition
+from apps.orders.utils.iva import iva_rate_for_center
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     ad_space_allows_marketplace_reservation,
@@ -412,6 +413,9 @@ class OrderSerializer(serializers.ModelSerializer):
     client_detail = OrderClientSnapshotSerializer(source="client", read_only=True)
     catalog_subtotal = serializers.SerializerMethodField()
     discount_total = serializers.SerializerMethodField()
+    iva_amount = serializers.SerializerMethodField()
+    total_with_iva = serializers.SerializerMethodField()
+    iva_percent = serializers.SerializerMethodField()
     line_pricing_editable = serializers.SerializerMethodField()
     split_payment_enabled = serializers.SerializerMethodField()
     payment_plan = serializers.SerializerMethodField()
@@ -431,6 +435,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_amount",
             "catalog_subtotal",
             "discount_total",
+            "iva_amount",
+            "total_with_iva",
+            "iva_percent",
             "line_pricing_editable",
             "split_payment_enabled",
             "payment_plan",
@@ -467,6 +474,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_amount",
             "catalog_subtotal",
             "discount_total",
+            "iva_amount",
+            "total_with_iva",
+            "iva_percent",
             "line_pricing_editable",
             "split_payment_enabled",
             "payment_plan",
@@ -568,6 +578,24 @@ class OrderSerializer(serializers.ModelSerializer):
 
         _, discount = order_line_pricing_totals(obj)
         return str(discount)
+
+    def _tax_breakdown(self, obj):
+        from apps.orders.utils.iva import order_tax_breakdown
+
+        cached = getattr(obj, "_tax_breakdown_cache", None)
+        if cached is None:
+            cached = order_tax_breakdown(obj)
+            obj._tax_breakdown_cache = cached
+        return cached
+
+    def get_iva_amount(self, obj):
+        return str(self._tax_breakdown(obj)["iva_amount"])
+
+    def get_total_with_iva(self, obj):
+        return str(self._tax_breakdown(obj)["total_with_iva"])
+
+    def get_iva_percent(self, obj):
+        return self._tax_breakdown(obj)["iva_percent"]
 
     def get_line_pricing_editable(self, obj):
         from apps.orders.utils.validators import order_line_pricing_editable
@@ -1361,6 +1389,7 @@ class OrderCreateSerializer(OrderReservationInfoWriteMixin, serializers.Serializ
                 monthly_price=row["_monthly_price"],
                 subtotal=row["_subtotal"],
                 original_subtotal=row["_subtotal"],
+                iva_rate=iva_rate_for_center(row["ad_space"].shopping_center),
             )
             total += row["_subtotal"]
         order.total_amount = total.quantize(Decimal("0.01"))

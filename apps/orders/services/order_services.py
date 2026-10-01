@@ -10,6 +10,7 @@ from django.db.models import Max, Prefetch
 from django.utils import timezone
 
 from apps.orders.models import Order, OrderStatus, OrderStatusEvent, OrderItem
+from apps.orders.utils.iva import iva_rate_for_center
 from apps.orders.services.order_hold_services import (
     NOTE_HOLD_ON_SUBMIT,
     apply_hold_on_order_submit,
@@ -179,7 +180,15 @@ def submit_draft_order(order: Order, *, actor: AbstractBaseUser | None = None) -
         item.monthly_price = monthly
         item.subtotal = sub
         item.original_subtotal = sub
-        item.save(update_fields=["monthly_price", "subtotal", "original_subtotal"])
+        item.iva_rate = iva_rate_for_center(item.ad_space.shopping_center)
+        item.save(
+            update_fields=[
+                "monthly_price",
+                "subtotal",
+                "original_subtotal",
+                "iva_rate",
+            ]
+        )
         total += sub
     order.total_amount = total.quantize(Decimal("0.01"))
     order.status = OrderStatus.SUBMITTED

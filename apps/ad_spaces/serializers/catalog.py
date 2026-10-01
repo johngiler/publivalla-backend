@@ -86,6 +86,10 @@ class AdSpaceSerializer(serializers.ModelSerializer):
         source="shopping_center.rental_billing_unit",
         read_only=True,
     )
+    charges_iva = serializers.BooleanField(
+        source="shopping_center.charges_iva",
+        read_only=True,
+    )
     class Meta:
         model = AdSpace
         fields = (
@@ -136,6 +140,7 @@ class AdSpaceSerializer(serializers.ModelSerializer):
             "high_season_months",
             "high_season_multiplier",
             "rental_billing_unit",
+            "charges_iva",
         )
         read_only_fields = ("availability",)
 

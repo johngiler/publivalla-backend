@@ -14,6 +14,8 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
+from apps.orders.utils.iva import iva_rate_for_center
+
 SAMBIL_WORKSPACE_SLUG = "sambil"
 IMPORT_TAG = "[sambil-pedido-historico]"
 
@@ -650,6 +652,7 @@ def import_sambil_historical_orders() -> dict:
             monthly_price=monthly,
             subtotal=subtotal,
             original_subtotal=subtotal,
+            iva_rate=iva_rate_for_center(center),
             created_at=submitted_at,
             updated_at=submitted_at,
         )

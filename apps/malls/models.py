@@ -76,6 +76,10 @@ class ShoppingCenter(TimeStampedActiveModel):
         default=RentalBillingUnit.CALENDAR_MONTH,
         help_text="Cotización en marketplace: solo meses de calendario.",
     )
+    charges_iva = models.BooleanField(
+        default=True,
+        help_text="Si está desactivado, las tomas de este centro no suman IVA (tasa 0).",
+    )
 
     class Meta:
         ordering = ["slug"]

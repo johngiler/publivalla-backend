@@ -20,6 +20,7 @@ from apps.clients.validators import (
     normalize_representative_name,
 )
 from apps.orders.models import Order, OrderItem, OrderPaymentMethod, OrderStatus
+from apps.orders.utils.iva import iva_rate_for_center
 from apps.orders.serializers import (
     OrderItemWriteSerializer,
     OrderReservationInfoWriteMixin,
@@ -419,6 +420,7 @@ class GuestCheckoutView(APIView):
                         monthly_price=row["_monthly_price"],
                         subtotal=row["_subtotal"],
                         original_subtotal=row["_subtotal"],
+                        iva_rate=iva_rate_for_center(row["ad_space"].shopping_center),
                     )
                     total += row["_subtotal"]
                 order.total_amount = total.quantize(Decimal("0.01"))

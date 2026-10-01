@@ -62,6 +62,31 @@ def generate_negotiation_and_municipality_pdfs(order: Order) -> None:
     order.save(update_fields=update_fields)
 
 
+def regenerate_unsigned_negotiation_sheet(order: Order) -> bool:
+    """Reemplaza la hoja de negociación sin firmar. No toca la firmada ni la carta de alcaldía."""
+    from apps.orders.utils.pdf_documents import build_negotiation_sheet_pdf_bytes
+    from apps.orders.utils.validators import (
+        order_has_negotiation_sheet_pdf,
+        order_has_negotiation_sheet_signed,
+    )
+
+    order.refresh_from_db()
+    if order_has_negotiation_sheet_signed(order):
+        return False
+    if not order_has_negotiation_sheet_pdf(order):
+        return False
+    neg = build_negotiation_sheet_pdf_bytes(order=order)
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    _delete_field_file(order, "negotiation_sheet_pdf")
+    order.negotiation_sheet_pdf.save(
+        f"negociacion_pedido_{order.pk}_{ts}.pdf",
+        ContentFile(neg),
+        save=False,
+    )
+    order.save(update_fields=["negotiation_sheet_pdf", "updated_at"])
+    return True
+
+
 def save_negotiation_sheet_signed_with_digital_signature(
     order: Order,
     signature_png: bytes,

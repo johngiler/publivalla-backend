@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 
@@ -250,6 +252,12 @@ class OrderItem(TimeStampedActiveModel):
         null=True,
         blank=True,
         help_text="Importe acordado solo para el mes inicial cuando el inicio es parcial.",
+    )
+    iva_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.16"),
+        help_text="Tasa de IVA congelada al enviar el pedido (0 si el centro no cobra IVA).",
     )
 
     def __str__(self):

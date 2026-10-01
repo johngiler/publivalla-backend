@@ -33,6 +33,7 @@ from apps.ad_spaces.models import AdSpace
 from apps.clients.models import Client, ClientStatus
 from apps.orders.models import Order, OrderItem, OrderStatus, OrderStatusEvent, OrderPaymentMethod
 from apps.orders.services import log_order_status_transition
+from apps.orders.utils.iva import iva_rate_for_center
 from apps.orders.utils.validators import (
     MIN_RESERVATION_CALENDAR_MONTHS,
     PIPELINE_STATUSES,
@@ -493,6 +494,7 @@ class Command(BaseCommand):
                     monthly_price=monthly,
                     subtotal=sub,
                     original_subtotal=sub,
+                    iva_rate=iva_rate_for_center(chosen.shopping_center),
                     created_at=created_dt,
                     updated_at=created_dt,
                 )

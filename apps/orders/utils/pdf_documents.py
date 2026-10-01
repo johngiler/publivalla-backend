@@ -30,9 +30,6 @@ from reportlab.lib.utils import ImageReader
 
 from apps.orders.utils.order_pdf_builder import OrderPdfBuilder
 
-
-IVA_RATE = Decimal("0.16")
-
 # Bloque firma arrendador / inquilino (hoja de negociación): altura de maquetación fija;
 # la imagen se dibuja más grande y puede solapar nombre y línea sin separarlas.
 _PARTY_SIG_COL_W = 7.8 * cm
@@ -602,11 +599,13 @@ def build_negotiation_sheet_pdf_bytes(
     end = max(it.end_date for it in items)
     months = (end.year - start.year) * 12 + (end.month - start.month) + 1
     from apps.orders.services.order_services import order_line_pricing_totals
+    from apps.orders.utils.iva import iva_label, order_tax_breakdown
 
     catalog_subtotal, discount_total = order_line_pricing_totals(order)
-    total = order.total_amount or Decimal("0")
-    iva = (total * IVA_RATE).quantize(Decimal("0.01"))
-    total_con_iva = (total + iva).quantize(Decimal("0.01"))
+    tax = order_tax_breakdown(order)
+    total = tax["subtotal"]
+    iva = tax["iva_amount"]
+    total_con_iva = tax["total_with_iva"]
 
     importe_lines = []
     description_lines = []
@@ -702,6 +701,10 @@ def build_negotiation_sheet_pdf_bytes(
         )
     data.extend(
         [
+        row(
+            iva_label(order),
+            f"${iva:,.2f} USD",
+        ),
         row(
             "TOTAL NEGOCIACION (CON IVA)",
             f"${total_con_iva:,.2f} USD",
@@ -899,6 +902,8 @@ def build_invoice_pdf_bytes(*, order, installment=None) -> bytes:
         format_payment_plan_observation_text,
     )
 
+    from apps.orders.utils.iva import iva_label, iva_on_base, order_tax_breakdown
+
     client = order.client
     items = _order_items_for_pdf(order)
     if installment is not None:
@@ -909,12 +914,15 @@ def build_invoice_pdf_bytes(*, order, installment=None) -> bytes:
         period_lbl = format_months_label(months)
         catalog = total
         discount = Decimal("0")
+        iva = iva_on_base(order, total)
     else:
         total = order.total_amount or Decimal("0")
         catalog, discount = order_line_pricing_totals(order)
         inst_total = 0
         period_lbl = ""
-    iva = (total * IVA_RATE).quantize(Decimal("0.01"))
+        tax = order_tax_breakdown(order)
+        total = tax["subtotal"]
+        iva = tax["iva_amount"]
     grand = (total + iva).quantize(Decimal("0.01"))
     order_ref = (order.code or "").strip() or f"#{order.pk}"
 
@@ -1004,7 +1012,7 @@ def build_invoice_pdf_bytes(*, order, installment=None) -> bytes:
     rows.append(
         [
             _p_cell("", inv_cell),
-            _p_cell(f"IVA ({int(IVA_RATE * 100)} %)", inv_num),
+            _p_cell(iva_label(order), inv_num),
             _p_cell(f"${iva:,.2f}", inv_num),
         ]
     )
