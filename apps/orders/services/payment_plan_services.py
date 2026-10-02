@@ -132,6 +132,32 @@ def _month_clip(item, year: int, month: int) -> tuple[date, date] | None:
     return clip_start, clip_end
 
 
+def _item_agreed_month_weights(item) -> dict[tuple[int, int], Decimal]:
+    """Mes inicial al importe acordado; el resto al canon de catálogo (con temporada alta)."""
+    if not (
+        item.custom_rental_start_enabled
+        and item.custom_rental_start_date
+        and item.first_month_agreed_subtotal is not None
+    ):
+        return _item_catalog_month_weights(item)
+
+    center = item.ad_space.shopping_center
+    first = (item.custom_rental_start_date.year, item.custom_rental_start_date.month)
+    weights: dict[tuple[int, int], Decimal] = {}
+    for year, month in _iter_calendar_months(item.start_date, item.end_date):
+        if (year, month) == first:
+            weights[(year, month)] = Decimal(item.first_month_agreed_subtotal).quantize(
+                Decimal("0.01")
+            )
+            continue
+        clip = _month_clip(item, year, month)
+        if clip:
+            weights[(year, month)] = line_subtotal_for_center(
+                item.monthly_price, center, clip[0], clip[1]
+            )
+    return weights
+
+
 def _item_catalog_month_weights(item) -> dict[tuple[int, int], Decimal]:
     center = item.ad_space.shopping_center
     weights: dict[tuple[int, int], Decimal] = {}
@@ -191,19 +217,72 @@ def _item_catalog_month_weights(item) -> dict[tuple[int, int], Decimal]:
     return weights
 
 
+def _item_month_share(item, year: int, month: int, weights: dict[tuple[int, int], Decimal]) -> Decimal:
+    """El mes inicial acordado no se prorratea. Un descuento extra de la línea cae en los demás meses."""
+    w = weights.get((year, month))
+    if not w:
+        return Decimal("0")
+    subtotal = Decimal(item.subtotal or 0)
+    agreed_first = (
+        item.custom_rental_start_enabled
+        and item.custom_rental_start_date
+        and item.first_month_agreed_subtotal is not None
+    )
+    if not agreed_first:
+        base = sum(weights.values(), Decimal("0"))
+        if base <= 0:
+            return Decimal("0")
+        return (subtotal * w / base).quantize(Decimal("0.01"))
+
+    first = (item.custom_rental_start_date.year, item.custom_rental_start_date.month)
+    first_amount = min(weights.get(first, Decimal("0")), subtotal)
+    if (year, month) == first:
+        return first_amount.quantize(Decimal("0.01"))
+    rest_base = sum(value for key, value in weights.items() if key != first)
+    rest_subtotal = subtotal - first_amount
+    if rest_base <= 0 or rest_subtotal <= 0:
+        return Decimal("0")
+    return (rest_subtotal * w / rest_base).quantize(Decimal("0.01"))
+
+
 def order_month_amount_usd(order: Order, year: int, month: int) -> Decimal:
     total = Decimal("0")
     for item in order.items.select_related("ad_space__shopping_center"):
-        weights = _item_catalog_month_weights(item)
-        w = weights.get((year, month))
-        if not w:
-            continue
-        item_catalog = sum(_item_catalog_month_weights(item).values(), Decimal("0"))
-        if item_catalog <= 0:
-            continue
-        share = (item.subtotal * w / item_catalog).quantize(Decimal("0.01"))
-        total += share
+        weights = _item_agreed_month_weights(item)
+        total += _item_month_share(item, year, month, weights)
     return total.quantize(Decimal("0.01"))
+
+
+def recalculate_unpaid_installment_amounts() -> int:
+    """Reescribe el monto de las cuotas que aún no están pagadas.
+
+    Si la hoja de negociación aún no está firmada, la vuelve a generar con los montos nuevos.
+    """
+    from apps.orders.utils.document_generation import regenerate_unsigned_negotiation_sheet
+
+    updated = 0
+    order_ids: set[int] = set()
+    installments = (
+        OrderPaymentInstallment.objects.exclude(status=OrderPaymentInstallmentStatus.PAID)
+        .select_related("plan__order")
+        .prefetch_related("months")
+    )
+    for inst in installments:
+        months = [(row.year, row.month) for row in inst.months.all()]
+        if not months:
+            continue
+        amount = sum(
+            order_month_amount_usd(inst.plan.order, year, month) for year, month in months
+        ).quantize(Decimal("0.01"))
+        if amount == inst.amount:
+            continue
+        inst.amount = amount
+        inst.save(update_fields=["amount", "updated_at"])
+        order_ids.add(inst.plan.order_id)
+        updated += 1
+    for order in Order.objects.filter(pk__in=order_ids):
+        regenerate_unsigned_negotiation_sheet(order)
+    return updated
 
 
 def format_month_label(year: int, month: int) -> str:
