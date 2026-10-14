@@ -60,6 +60,7 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
             "monthly_price_usd",
             "availability",
             "availability_label",
+            "blocked_note",
             "cover_image",
             "gallery_images",
             "location_images",
@@ -101,6 +102,15 @@ class AdSpaceAdminSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {"code": list(exc.messages)}
                     ) from exc
+        availability = attrs.get(
+            "availability",
+            getattr(self.instance, "availability", AdSpaceAvailability.AVAILABLE),
+        )
+        note = attrs.get("blocked_note", None)
+        if note is not None:
+            attrs["blocked_note"] = str(note).strip()[:500]
+        if availability != AdSpaceAvailability.BLOCKED:
+            attrs["blocked_note"] = ""
         return attrs
 
     def get_availability_label(self, obj):

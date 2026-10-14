@@ -78,6 +78,12 @@ class AdSpace(TimeStampedActiveModel):
         default=AdSpaceAvailability.AVAILABLE,
         help_text="Disponibilidad comercial (disponible, ocupado o bloqueado manualmente).",
     )
+    blocked_note = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Motivo interno cuando la toma está bloqueada (exoneración, etc.).",
+    )
     cover_image = models.ImageField(
         upload_to=ad_space_cover_upload,
         blank=True,
