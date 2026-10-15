@@ -20,8 +20,12 @@ from apps.clients.models import ClientAdSpaceFavorite
 from apps.orders.models import OrderItem, OrderStatus
 from apps.orders.services.order_renewal_services import (
     item_allows_renewal_request,
-    latest_open_renewal,
+    item_amount_breakdown,
+    latest_open_renewal_from_prefetched,
+    latest_renewal_from_prefetched,
     renewal_payload,
+    renewals_history_payload,
+    renewals_prefetch,
 )
 from apps.orders.services.payment_plan_services import (
     filter_order_items_with_incomplete_payment_plan,
@@ -81,6 +85,7 @@ class MyContractsView(APIView):
                     "ad_space__gallery_images",
                     queryset=AdSpaceImage.objects.order_by("sort_order", "id"),
                 ),
+                renewals_prefetch(),
             )
             .order_by("-end_date", "-start_date", "-id")
         )
@@ -123,10 +128,11 @@ class MyContractsView(APIView):
                     gallery_urls.append(row.image.url)
             cover = ad_space_effective_cover_url(ad)
             open_renewal = (
-                latest_open_renewal(it.pk)
+                latest_open_renewal_from_prefetched(it)
                 if it.order.status == OrderStatus.ACTIVE and not it.order.ended_early
                 else None
             )
+            latest_renewal = latest_renewal_from_prefetched(it)
             items_out.append(
                 {
                     "id": it.id,
@@ -141,8 +147,17 @@ class MyContractsView(APIView):
                         it, today=today
                     ),
                     "open_renewal": (
-                        renewal_payload(open_renewal) if open_renewal else None
+                        renewal_payload(open_renewal, today=today)
+                        if open_renewal
+                        else None
                     ),
+                    "latest_renewal": (
+                        renewal_payload(latest_renewal, today=today)
+                        if latest_renewal
+                        else None
+                    ),
+                    "renewals": renewals_history_payload(it, today=today),
+                    "amount_breakdown": item_amount_breakdown(it, today=today),
                     "ad_space_id": ad.id,
                     "ad_space_code": ad.code,
                     "ad_space_title": ad.name,

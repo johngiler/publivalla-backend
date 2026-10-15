@@ -15,8 +15,12 @@ from apps.ad_spaces.models import AdSpaceImage
 from apps.common.utils.pagination import StandardPagination
 from apps.orders.models import OrderItem, OrderStatus
 from apps.orders.services.order_renewal_services import (
-    latest_open_renewal,
+    item_amount_breakdown,
+    latest_open_renewal_from_prefetched,
+    latest_renewal_from_prefetched,
     renewal_payload,
+    renewals_history_payload,
+    renewals_prefetch,
 )
 from apps.orders.services.payment_plan_services import (
     filter_order_items_with_incomplete_payment_plan,
@@ -94,6 +98,7 @@ class AdminMarketplaceContractsView(APIView):
                     "ad_space__gallery_images",
                     queryset=AdSpaceImage.objects.order_by("sort_order", "id"),
                 ),
+                renewals_prefetch(),
             )
         )
 
@@ -237,10 +242,11 @@ class AdminMarketplaceContractsView(APIView):
                 days_remaining = 0
 
             open_renewal = (
-                latest_open_renewal(it.pk)
+                latest_open_renewal_from_prefetched(it)
                 if it.order.status == OrderStatus.ACTIVE
                 else None
             )
+            latest_renewal = latest_renewal_from_prefetched(it)
             results.append(
                 {
                     "id": it.id,
@@ -258,8 +264,17 @@ class AdminMarketplaceContractsView(APIView):
                     ),
                     "contract_row_kind": kind,
                     "open_renewal": (
-                        renewal_payload(open_renewal) if open_renewal else None
+                        renewal_payload(open_renewal, today=today)
+                        if open_renewal
+                        else None
                     ),
+                    "latest_renewal": (
+                        renewal_payload(latest_renewal, today=today)
+                        if latest_renewal
+                        else None
+                    ),
+                    "renewals": renewals_history_payload(it, today=today),
+                    "amount_breakdown": item_amount_breakdown(it, today=today),
                     "client_id": client.id,
                     "client_company_name": (client.company_name or "").strip(),
                     "ad_space_id": ad.id,

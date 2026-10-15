@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Prefetch
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -133,14 +133,40 @@ def amount_for_renewal_months(item: OrderItem, months: list[tuple[int, int]]) ->
     return total.quantize(Decimal("0.01"))
 
 
-def renewal_payload(renewal: OrderRenewal) -> dict:
+def renewal_badge_meta(
+    renewal: OrderRenewal,
+    *,
+    today: date | None = None,
+) -> dict[str, str]:
+    """Clave + etiqueta corta para pills de listado (cliente y admin)."""
+    today = today or timezone.localdate()
+    if renewal.status == OrderRenewalStatus.PENDING:
+        return {"key": "pending", "label": "Renovación pendiente"}
+    if renewal.status == OrderRenewalStatus.REJECTED:
+        return {"key": "rejected", "label": "Renovación rechazada"}
+    if renewal.status == OrderRenewalStatus.COMPLETED:
+        if completed_renewal_has_started(renewal, today=today):
+            return {"key": "renewed", "label": "Renovada"}
+        return {"key": "approved", "label": "Extensión aprobada"}
+    return {"key": "unknown", "label": renewal.get_status_display()}
+
+
+def renewal_payload(
+    renewal: OrderRenewal,
+    *,
+    today: date | None = None,
+) -> dict:
+    today = today or timezone.localdate()
     months = sorted((m.year, m.month) for m in renewal.months.all())
+    badge = renewal_badge_meta(renewal, today=today)
     return {
         "id": renewal.id,
         "order_item_id": renewal.order_item_id,
         "order_id": renewal.order_item.order_id,
         "status": renewal.status,
         "status_label": renewal.get_status_display(),
+        "badge_key": badge["key"],
+        "badge_label": badge["label"],
         "amount": str(renewal.amount),
         "months": [{"year": y, "month": m} for y, m in months],
         "months_label": ", ".join(format_month_label(y, m) for y, m in months),
@@ -155,6 +181,88 @@ def renewal_payload(renewal: OrderRenewal) -> dict:
         "reviewed_at": renewal.reviewed_at.isoformat() if renewal.reviewed_at else None,
         "applied_at": renewal.applied_at.isoformat() if renewal.applied_at else None,
     }
+
+
+def renewals_prefetch():
+    """Prefetch ordenado para listados de contratos (última = [0])."""
+    return Prefetch(
+        "renewals",
+        queryset=OrderRenewal.objects.prefetch_related("months").order_by(
+            "-created_at", "-id"
+        ),
+    )
+
+
+def renewals_for_item(order_item: OrderItem) -> list[OrderRenewal]:
+    """Renovaciones de la línea; más reciente primero si vienen del prefetch."""
+    renewals = getattr(order_item, "_prefetched_objects_cache", {}).get("renewals")
+    if renewals is not None:
+        return list(renewals)
+    return list(
+        OrderRenewal.objects.filter(order_item_id=order_item.pk)
+        .prefetch_related("months")
+        .order_by("-created_at", "-id")
+    )
+
+
+def renewals_history_payload(
+    order_item: OrderItem,
+    *,
+    today: date | None = None,
+) -> list[dict]:
+    """Historial cronológico (1.ª solicitud → última) para desglose en UI."""
+    today = today or timezone.localdate()
+    rows = renewals_for_item(order_item)
+    chronological = sorted(
+        rows,
+        key=lambda r: (
+            r.created_at or timezone.now(),
+            r.pk or 0,
+        ),
+    )
+    return [renewal_payload(r, today=today) for r in chronological]
+
+
+def item_amount_breakdown(
+    order_item: OrderItem,
+    *,
+    today: date | None = None,
+) -> dict:
+    """
+    Desglose del subtotal de la línea: periodo inicial + renovaciones aplicadas.
+    Las pendientes/rechazadas no suman al total.
+    """
+    today = today or timezone.localdate()
+    renewals = renewals_history_payload(order_item, today=today)
+    completed_sum = Decimal("0")
+    for row in renewals:
+        if row.get("status") == OrderRenewalStatus.COMPLETED:
+            completed_sum += Decimal(str(row.get("amount") or "0"))
+    total = Decimal(order_item.subtotal or 0).quantize(Decimal("0.01"))
+    base = (total - completed_sum).quantize(Decimal("0.01"))
+    if base < 0:
+        base = Decimal("0.00")
+    return {
+        "base_amount": str(base),
+        "completed_renewals_total": str(completed_sum.quantize(Decimal("0.01"))),
+        "total": str(total),
+        "renewals": renewals,
+    }
+
+
+def latest_renewal_from_prefetched(order_item: OrderItem) -> OrderRenewal | None:
+    rows = renewals_for_item(order_item)
+    return rows[0] if rows else None
+
+
+def latest_open_renewal_from_prefetched(order_item: OrderItem) -> OrderRenewal | None:
+    renewals = getattr(order_item, "_prefetched_objects_cache", {}).get("renewals")
+    if renewals is not None:
+        for row in renewals:
+            if row.status in _OPEN_RENEWAL_STATUSES:
+                return row
+        return None
+    return latest_open_renewal(order_item.pk)
 
 
 def latest_open_renewal(order_item_id: int) -> OrderRenewal | None:
