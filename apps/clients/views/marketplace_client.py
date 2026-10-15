@@ -18,6 +18,11 @@ from apps.ad_spaces.serializers import AdSpaceSerializer
 from apps.common.utils.catalog_access import shopping_center_allows_public_catalog
 from apps.clients.models import ClientAdSpaceFavorite
 from apps.orders.models import OrderItem, OrderStatus
+from apps.orders.services.order_renewal_services import (
+    item_allows_renewal_request,
+    latest_open_renewal,
+    renewal_payload,
+)
 from apps.orders.services.payment_plan_services import (
     filter_order_items_with_incomplete_payment_plan,
     order_uses_split_payment,
@@ -117,6 +122,11 @@ class MyContractsView(APIView):
                 if row.image:
                     gallery_urls.append(row.image.url)
             cover = ad_space_effective_cover_url(ad)
+            open_renewal = (
+                latest_open_renewal(it.pk)
+                if it.order.status == OrderStatus.ACTIVE and not it.order.ended_early
+                else None
+            )
             items_out.append(
                 {
                     "id": it.id,
@@ -127,6 +137,12 @@ class MyContractsView(APIView):
                     "split_payment_enabled": order_uses_split_payment(it.order),
                     "ended_early": bool(it.order.ended_early),
                     "contract_row_kind": kind,
+                    "can_request_renewal": item_allows_renewal_request(
+                        it, today=today
+                    ),
+                    "open_renewal": (
+                        renewal_payload(open_renewal) if open_renewal else None
+                    ),
                     "ad_space_id": ad.id,
                     "ad_space_code": ad.code,
                     "ad_space_title": ad.name,

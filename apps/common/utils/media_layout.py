@@ -300,3 +300,24 @@ def order_installation_permit_pdf_upload(instance, filename: str) -> str:
     return _order_attachment_file_upload(
         instance, filename, "orders", "installation_permits"
     )
+
+
+def _workspace_from_renewal(instance):
+    item = getattr(instance, "order_item", None)
+    if item is None:
+        iid = getattr(instance, "order_item_id", None)
+        if iid:
+            OrderItem = apps.get_model("orders", "OrderItem")
+            item = (
+                OrderItem.objects.filter(pk=iid)
+                .select_related("order__client__workspace")
+                .first()
+            )
+    order = getattr(item, "order", None) if item else None
+    return _workspace_from_order(order)
+
+
+def order_renewal_file_upload(instance, filename: str) -> str:
+    ws = _workspace_from_renewal(instance)
+    owner = _safe_owner_slug_from_workspace(ws)
+    return _join_under_workspace_slug(owner, "orders", "renewals", filename=filename)

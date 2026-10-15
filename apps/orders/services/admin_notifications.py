@@ -267,6 +267,40 @@ def _notify_line_running(order: Order, item: OrderItem, ref: str) -> None:
     )
 
 
+def notify_contract_renewal_requested(
+    renewal_id: int,
+    *,
+    actor_id: int | None = None,
+) -> None:
+    """Campanita cuando el cliente solicita renovar un contrato activo."""
+    from apps.orders.models import OrderRenewal
+
+    try:
+        renewal = OrderRenewal.objects.select_related(
+            "order_item__order__client__workspace",
+            "order_item__ad_space",
+        ).prefetch_related("months").get(pk=renewal_id)
+    except OrderRenewal.DoesNotExist:
+        return
+    order = renewal.order_item.order
+    workspace = order.client.workspace
+    code = (renewal.order_item.ad_space.code or "").strip() or f"#{renewal.order_item_id}"
+    months = sorted((m.year, m.month) for m in renewal.months.all())
+    from apps.orders.services.payment_plan_services import format_month_label
+
+    period = ", ".join(format_month_label(y, m) for y, m in months) or "meses nuevos"
+    notify_workspace_admins(
+        workspace=workspace,
+        kind=AdminNotificationKind.CONTRACT_RENEWAL_REQUESTED,
+        title="Renovación solicitada",
+        body=f"{_company(order)} pidió renovar {code} ({period}).",
+        href=_contratos_href(order),
+        dedupe_key=f"contract_renewal_requested:{renewal.pk}",
+        order=order,
+        exclude_user_id=actor_id,
+    )
+
+
 def notify_client_activity(order_id: int, activity: str, *, actor_id: int | None = None) -> None:
     """Aviso al cargar hoja, arte o comprobante. Independiente del correo."""
     kind_by_activity = {

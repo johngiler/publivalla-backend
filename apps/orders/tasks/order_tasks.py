@@ -196,3 +196,37 @@ def schedule_send_order_client_activity_admin_emails(
             order_id,
             activity,
         )
+
+
+def schedule_notify_contract_renewal_requested(
+    renewal_id: int,
+    *,
+    actor_id: int | None = None,
+) -> None:
+    """Campanita inmediata + correo a admins cuando hay solicitud de renovación."""
+    from apps.orders.models import OrderRenewal
+    from apps.orders.services.admin_notifications import (
+        notify_contract_renewal_requested,
+    )
+
+    notify_contract_renewal_requested(renewal_id, actor_id=actor_id)
+    try:
+        renewal = OrderRenewal.objects.select_related("order_item").get(pk=renewal_id)
+    except OrderRenewal.DoesNotExist:
+        return
+    order_id = renewal.order_item.order_id
+    if not _has_celery_broker():
+        logger.warning(
+            "No se envió correo de renovación: falta CELERY_BROKER_URL (pedido %s).",
+            order_id,
+        )
+        return
+    try:
+        send_order_client_activity_admin_emails_task.delay(
+            order_id, "renewal_requested", actor_id=actor_id
+        )
+    except Exception:
+        logger.exception(
+            "No se pudo encolar el correo de renovación (pedido %s).",
+            order_id,
+        )

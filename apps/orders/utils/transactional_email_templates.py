@@ -678,8 +678,12 @@ def build_password_reset_transactional_email(
     return subject, "\n".join(text_lines), html_body, inline_logo
 
 
-OrderClientActivityKind = Literal["payment_receipt",
-                                  "negotiation_signed", "art_upload"]
+OrderClientActivityKind = Literal[
+    "payment_receipt",
+    "negotiation_signed",
+    "art_upload",
+    "renewal_requested",
+]
 
 
 def build_order_client_activity_admin_email(
@@ -721,6 +725,13 @@ def build_order_client_activity_admin_email(
         lead = (
             f"La empresa «{company}» adjuntó un archivo de arte a una línea del pedido. "
             "Revisa los adjuntos en el panel para continuar el flujo."
+        )
+    elif activity == "renewal_requested":
+        subject = f"{mp}: renovación de contrato — «{company}»"
+        headline = "Renovación de contrato solicitada"
+        lead = (
+            f"La empresa «{company}» solicitó renovar un contrato activo. "
+            "Revisa la solicitud en Contratos para aprobar o rechazar."
         )
     else:
         raise ValueError(f"actividad de cliente no soportada: {activity!r}")

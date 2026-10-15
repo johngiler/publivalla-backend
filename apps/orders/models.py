@@ -13,6 +13,7 @@ from apps.common.utils.media_layout import (
     order_payment_installment_invoice_digital_upload,
     order_payment_installment_receipt_upload,
     order_payment_receipt_upload,
+    order_renewal_file_upload,
     order_signed_document_upload,
 )
 
@@ -453,6 +454,91 @@ class OrderPaymentInstallmentMonth(models.Model):
         return f"{self.year}-{self.month:02d}"
 
 
+class OrderRenewalStatus(models.TextChoices):
+    PENDING = "pending", "Pendiente de aprobación"
+    REJECTED = "rejected", "Rechazada"
+    COMPLETED = "completed", "Aplicada"
+
+
+class OrderRenewal(TimeStampedActiveModel):
+    """Solicitud de renovación: extiende el periodo de una línea de contrato activo."""
+
+    order_item = models.ForeignKey(
+        OrderItem,
+        on_delete=models.CASCADE,
+        related_name="renewals",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=OrderRenewalStatus.choices,
+        default=OrderRenewalStatus.PENDING,
+        db_index=True,
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Subtotal sin IVA de los meses a extender (canon de catálogo).",
+    )
+    client_note = models.CharField(max_length=500, blank=True, default="")
+    admin_note = models.CharField(max_length=500, blank=True, default="")
+    payment_receipt = models.FileField(
+        upload_to=order_renewal_file_upload,
+        blank=True,
+        null=True,
+    )
+    permit_file = models.FileField(
+        upload_to=order_renewal_file_upload,
+        blank=True,
+        null=True,
+        help_text="Permiso u otro soporte del trámite corto de renovación.",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_renewals_requested",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_renewals_reviewed",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    payment_confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"Renovación {self.pk} línea {self.order_item_id}"
+
+
+class OrderRenewalMonth(models.Model):
+    renewal = models.ForeignKey(
+        OrderRenewal,
+        on_delete=models.CASCADE,
+        related_name="months",
+    )
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ["year", "month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("renewal", "year", "month"),
+                name="orders_renewal_month_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.year}-{self.month:02d}"
+
+
 class AdminNotificationKind(models.TextChoices):
     ORDER_SUBMITTED = "order_submitted", "Pedido nuevo"
     COMPETING_BID = "competing_bid", "Puja"
@@ -465,6 +551,7 @@ class AdminNotificationKind(models.TextChoices):
     CONTRACT_ENDING_SOON = "contract_ending_soon", "Por finalizar"
     CONTRACT_FINISHED = "contract_finished", "Contrato finalizado"
     CONTRACT_ENDED_EARLY = "contract_ended_early", "Finalización anticipada"
+    CONTRACT_RENEWAL_REQUESTED = "contract_renewal_requested", "Renovación solicitada"
 
 
 class AdminNotification(models.Model):

@@ -14,6 +14,10 @@ from apps.ad_spaces.utils.covers import ad_space_effective_cover_url
 from apps.ad_spaces.models import AdSpaceImage
 from apps.common.utils.pagination import StandardPagination
 from apps.orders.models import OrderItem, OrderStatus
+from apps.orders.services.order_renewal_services import (
+    latest_open_renewal,
+    renewal_payload,
+)
 from apps.orders.services.payment_plan_services import (
     filter_order_items_with_incomplete_payment_plan,
     order_uses_split_payment,
@@ -232,6 +236,11 @@ class AdminMarketplaceContractsView(APIView):
                 elapsed_ratio = 1.0
                 days_remaining = 0
 
+            open_renewal = (
+                latest_open_renewal(it.pk)
+                if it.order.status == OrderStatus.ACTIVE
+                else None
+            )
             results.append(
                 {
                     "id": it.id,
@@ -248,6 +257,9 @@ class AdminMarketplaceContractsView(APIView):
                         else None
                     ),
                     "contract_row_kind": kind,
+                    "open_renewal": (
+                        renewal_payload(open_renewal) if open_renewal else None
+                    ),
                     "client_id": client.id,
                     "client_company_name": (client.company_name or "").strip(),
                     "ad_space_id": ad.id,

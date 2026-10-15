@@ -35,7 +35,7 @@ from apps.workspaces.tenant import spa_public_base_url
 logger = logging.getLogger(__name__)
 
 _CLIENT_ACTIVITY_KEYS = frozenset(
-    {"payment_receipt", "negotiation_signed", "art_upload"}
+    {"payment_receipt", "negotiation_signed", "art_upload", "renewal_requested"}
 )
 
 
@@ -62,6 +62,16 @@ def _order_admin_orders_url(order: Order) -> str:
     if ref:
         return f"{base}/dashboard/pedidos?{urlencode({'q': ref})}"
     return f"{base}/dashboard/pedidos"
+
+
+def _order_admin_contracts_url(order: Order) -> str:
+    """Sección Contratos del panel, filtrada por referencia del pedido."""
+    ws = getattr(getattr(order, "client", None), "workspace", None)
+    base = spa_public_base_url(ws)
+    ref = _order_reference_for_list_filter(order)
+    if ref:
+        return f"{base}/dashboard/contratos?{urlencode({'q': ref})}"
+    return f"{base}/dashboard/contratos"
 
 
 def _emails_client_company(order: Order) -> list[str]:
@@ -412,7 +422,11 @@ def try_send_order_client_activity_admin_emails(
         return
     marketplace = (ws.marketplace_title or ws.name or "").strip() or ws.slug
     accent = (getattr(ws, "primary_color", None) or "").strip() or None
-    admin_url = _order_admin_orders_url(order)
+    admin_url = (
+        _order_admin_contracts_url(order)
+        if key == "renewal_requested"
+        else _order_admin_orders_url(order)
+    )
     subject, body, html_body, inline_logo = build_order_client_activity_admin_email(
         marketplace_title=marketplace,
         company_name=(order.client.company_name or "").strip(),

@@ -76,10 +76,17 @@ def _mark_year_months_from_ranges(
                 break
 
 
-def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
+def year_months_occupied(
+    ad_space_id: int,
+    year: int,
+    *,
+    include_pending_renewals: bool = True,
+) -> list[bool]:
     """
     12 posiciones (índice 0 = enero). True = mes con solapamiento de reserva/bloqueo
     (segmento «ocupado» en UI).
+
+    Las renovaciones pendientes también ocupan meses en catálogo hasta aprobarse o rechazarse.
     """
     flags = [False] * 12
     ad = (
@@ -96,6 +103,17 @@ def year_months_occupied(ad_space_id: int, year: int) -> list[bool]:
     ranges = list(items) + active_availability_block_ranges(ad_space_id)
 
     _mark_year_months_from_ranges(flags, ranges, year)
+
+    if include_pending_renewals:
+        from apps.orders.models import OrderRenewalMonth, OrderRenewalStatus
+
+        for _y, m in OrderRenewalMonth.objects.filter(
+            renewal__status=OrderRenewalStatus.PENDING,
+            renewal__order_item__ad_space_id=ad_space_id,
+            year=year,
+        ).values_list("year", "month"):
+            if 1 <= m <= 12:
+                flags[m - 1] = True
     return flags
 
 

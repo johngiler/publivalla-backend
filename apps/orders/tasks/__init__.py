@@ -3,6 +3,7 @@
 from apps.orders.tasks.order_tasks import (
     notify_client_activation_after_approval_task,
     schedule_notify_client_activation_after_approval,
+    schedule_notify_contract_renewal_requested,
     schedule_send_order_client_activity_admin_emails,
     schedule_send_order_status_emails,
     send_order_client_activity_admin_emails_task,
@@ -12,6 +13,7 @@ from apps.orders.tasks.order_tasks import (
 __all__ = [
     "notify_client_activation_after_approval_task",
     "schedule_notify_client_activation_after_approval",
+    "schedule_notify_contract_renewal_requested",
     "schedule_send_order_client_activity_admin_emails",
     "schedule_send_order_status_emails",
     "send_order_client_activity_admin_emails_task",

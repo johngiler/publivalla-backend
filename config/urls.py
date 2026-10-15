@@ -37,6 +37,11 @@ from apps.orders.views.admin_notifications import (
     AdminNotificationListView,
     AdminNotificationReadView,
 )
+from apps.orders.views.order_renewals import (
+    AdminContractRenewalActionView,
+    MyContractRenewalDocumentsView,
+    MyContractRenewalView,
+)
 from apps.orders.views.competing_reservations import (
     AdminCompetingReservationAwardView,
     AdminCompetingReservationsCountView,
@@ -177,6 +182,21 @@ urlpatterns = [
         name="my-company-member-detail",
     ),
     path("api/me/contracts/", MyContractsView.as_view(), name="my-contracts"),
+    path(
+        "api/me/contracts/<int:item_id>/renewal/",
+        MyContractRenewalView.as_view(),
+        name="my-contract-renewal",
+    ),
+    path(
+        "api/me/contract-renewals/<int:renewal_id>/documents/",
+        MyContractRenewalDocumentsView.as_view(),
+        name="my-contract-renewal-documents",
+    ),
+    path(
+        "api/admin/contract-renewals/<int:renewal_id>/",
+        AdminContractRenewalActionView.as_view(),
+        name="admin-contract-renewal-action",
+    ),
     path("api/me/favorites/", MyFavoritesView.as_view(), name="my-favorites"),
     path(
         "api/me/favorites/<int:ad_space_id>/",
