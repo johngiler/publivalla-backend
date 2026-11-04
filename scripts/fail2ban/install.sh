@@ -35,6 +35,8 @@ install -m 0644 "$SCRIPT_DIR/filter.d/publivalla-nginx.conf" \
   /etc/fail2ban/filter.d/publivalla-nginx.conf
 install -m 0644 "$SCRIPT_DIR/jail.d/publivalla-api.local" \
   /etc/fail2ban/jail.d/publivalla-api.local
+install -m 0644 "$SCRIPT_DIR/jail.d/sshd-port.local" \
+  /etc/fail2ban/jail.d/sshd-port.local
 
 # Ensure sshd jail stays available; do not disable default jails globally.
 if [[ ! -f /etc/fail2ban/jail.local ]]; then
